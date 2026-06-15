@@ -1,0 +1,20 @@
+services:
+  hrm-portal:
+    build: .
+    ports:
+      - "8080:80"
+    volumes:
+      - ./uploads:/var/www/html/uploads
+      - ./runtime:/var/www/html/runtime
+    environment:
+      - APP_FILE_ENCRYPTION_KEY=${APP_FILE_ENCRYPTION_KEY:-}
+      - GOOGLE_CACHE_TTL=60
+      - AUTH_MAX_ROWS=50000
+      - AUTH_MAX_COLS=500
+      - PERIOD_MAX_ROWS=50000
+      - PERIOD_MAX_COLS=1000
+      - MITACO_SQLSERVER_HOST=${MITACO_SQLSERVER_HOST:-}
+      - MITACO_SQLSERVER_DATABASE=${MITACO_SQLSERVER_DATABASE:-}
+      - MITACO_SQLSERVER_UID=${MITACO_SQLSERVER_UID:-}
+      - MITACO_SQLSERVER_PASSWORD=${MITACO_SQLSERVER_PASSWORD:-}
+      - MITACO_CORS_ORIGIN=${MITACO_CORS_ORIGIN:-}

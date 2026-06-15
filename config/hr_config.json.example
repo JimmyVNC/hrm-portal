@@ -1,0 +1,20 @@
+{
+    "periods": [],
+    "auth_source_type": "google",
+    "auth_sheet_id": "",
+    "auth_gid": "0",
+    "auth_local_file": "",
+    "admin_password": "$2y$10$replace.with.bcrypt.hash.example",
+    "site_company": "VINH THANH STEEL",
+    "site_logo_text": "HR",
+    "site_subtitle": "Employee Self-Service",
+    "site_hero_title": "Tra Cuu Bang Cong<br>& Thu Nhap",
+    "site_hero_desc": "Nhap ma nhan vien va mat khau de xem chi tiet bang luong theo tung ky.",
+    "site_footer": "HR Payroll Portal",
+    "col_emp_id": "MA NV",
+    "col_password": "MAT KHAU",
+    "col_emp_name": "HO TEN NHAN VIEN",
+    "col_department": "BO PHAN",
+    "stat_cols": "NGAY CONG,GIO TANG CA,THUC LANH,TONG TIEN LUONG,BO PHAN",
+    "highlight_cols": ""
+}

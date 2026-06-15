@@ -1,0 +1,14 @@
+.DS_Store
+.env
+.phpunit.cache/
+
+/vendor/
+/uploads/
+/runtime/
+/__MACOSX/
+
+/error_log
+
+*.log
+*.tmp
+*.bak

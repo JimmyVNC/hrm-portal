@@ -1,140 +1,217 @@
 # HRM Portal
 
-HRM Portal is a lightweight PHP application for employee payroll lookup and admin configuration.
+HRM Portal là cổng tra cứu nội bộ cho nhân viên xem bảng công, phiếu lương và các khoản thu nhập theo từng kỳ. Dự án được viết bằng PHP thuần, dễ triển khai trên hosting phổ thông, VPS, Apache/Nginx hoặc Docker.
 
-## Project Structure
+## Dành cho ai?
+
+- Nhân viên: đăng nhập bằng mã nhân viên và mật khẩu để xem dữ liệu cá nhân.
+- Nhân sự/kế toán: tải lên file Excel/CSV hoặc kết nối Google Sheets để quản lý dữ liệu lương.
+- Quản trị viên: cấu hình kỳ lương, cột dữ liệu, giao diện, file xác thực và bảo mật trong Admin Panel.
+
+## Tính năng chính
+
+- Tra cứu bảng lương theo mã nhân viên.
+- Hỗ trợ nhiều kỳ lương, bật/tắt từng kỳ riêng biệt.
+- Nguồn dữ liệu linh hoạt: Google Sheets hoặc file local `.xlsx`/`.csv`.
+- Quản lý danh sách nhân viên và file xác thực trong Admin Panel.
+- Tự động backup trước khi cập nhật dữ liệu quan trọng.
+- Mã hóa file local nếu cấu hình `APP_FILE_ENCRYPTION_KEY`.
+- Chống CSRF, session timeout, header bảo mật và kiểm soát file upload.
+- Có PHPUnit test, smoke test và tài liệu vận hành kèm theo.
+
+## Cấu trúc nhanh
 
 ```text
 .
-├── index.php / admin.php / scripts/diagnostics.php
-├── src
-│   ├── Application   (AuthActions, DataActions, AdminActions)
-│   ├── Infrastructure (bootstrap.php, Autoloader)
-│   ├── Domain
-│   ├── Services
-│   └── Config.php, Security.php, …
-├── tests
-├── docs
-├── runtime/cache
-├── uploads
-└── .github/workflows
+├── index.php                 # Trang nhân viên tra cứu
+├── admin.php                 # Trang quản trị
+├── api/                      # API phụ trợ
+├── assets/                   # CSS/JS giao diện
+├── config/                   # Cấu hình ứng dụng
+├── docs/                     # Tài liệu chi tiết
+├── scripts/                  # Công cụ vận hành/migration
+├── src/                      # Mã nguồn PHP chính
+├── tests/                    # PHPUnit tests
+├── uploads/                  # File Excel/CSV tải lên (không commit)
+└── runtime/                  # Cache/share/runtime data (không commit)
 ```
 
-## Requirements
+## Yêu cầu
 
-- PHP 7.4+ (recommended PHP 8+)
-- PHP `zip` extension for writing XLSX files
-- Write permission for `uploads/`
+- PHP 7.4 trở lên, khuyến nghị PHP 8.x.
+- Extension PHP `zip` nếu cần ghi file XLSX.
+- Quyền ghi cho thư mục `uploads/` và `runtime/`.
+- Composer nếu muốn chạy test hoặc cài dependency dev.
 
-## Setup
+## Chạy local nhanh
 
-1. Copy `config/hr_config.json.example` to `config/hr_config.json` (first-time bootstrap only).
-2. Copy `.env.example` to `.env` and set sensitive values (especially `ADMIN_PASSWORD`).
-3. Optional: run `composer install` so `vendor/autoload.php` loads `App\` and `Shuchkin\`. If you skip Composer, entry points still work via `src/Infrastructure/bootstrap.php` (bundled PSR-4 loader).
-4. Start server:
-   - PHP built-in: `php -S localhost:8000`
-   - Or deploy with Apache/Nginx.
-5. Open:
-   - User portal: `index.php`
-   - Admin panel: `admin.php`
-
-## Optional Docker Run
+1. Cài dependency dev:
 
 ```bash
-docker compose up --build
+composer install
 ```
 
-Then open `http://localhost:8080`.
-
-## Security Notes
-
-- `config/hr_config.json`, `.env`, and uploaded files are ignored by Git via `.gitignore`.
-- `ADMIN_PASSWORD` in `.env` has highest priority over `config/hr_config.json`.
-- `APP_FILE_ENCRYPTION_KEY` in `.env` enables encrypted-at-rest storage for shared payroll result files under `runtime/share/`.
-- The same `APP_FILE_ENCRYPTION_KEY` also protects local spreadsheet files stored under `uploads/`; the app decrypts them transparently for admin preview, download, and payroll lookup.
-- If a plaintext admin password is still stored in `config/hr_config.json`, the first successful admin login will auto-migrate it to a secure hash.
-- `uploads/.htaccess` blocks PHP execution and directory listing for Apache deployments.
-- Upload logic validates extension, size, and path format.
-- Local spreadsheet uploads support CSV/XLSX. Legacy XLS is rejected.
-- See `docs/SECURE_DEPLOYMENT_CHECKLIST.md` before deploying.
-
-## Configuration Priority
-
-Configuration is loaded in this order:
-
-1. Default values in `src/Config.php`
-2. `config/hr_config.json`
-3. Environment variables from `.env` and process environment
-
-## Smoke Test
-
-Run:
+2. Tạo cấu hình ban đầu nếu chưa có:
 
 ```bash
-php scripts/smoke_test.php
+cp config/hr_config.json.example config/hr_config.json
 ```
 
-The script checks:
+3. Tạo file `.env` ở thư mục gốc:
 
-- config loading
-- environment override visibility
-- password hash flow
-- upload directory permissions
-- csrf/session bootstrap
-- runtime upload limit sanity checks
+```env
+APP_FILE_ENCRYPTION_KEY=
+```
 
-## Encrypted Storage Rollout
-
-1. Generate a key:
+Có thể tạo khóa mã hóa bằng:
 
 ```bash
 php scripts/generate_file_encryption_key.php
 ```
 
-2. Add the output line to `.env`.
+Sau đó copy dòng khóa được in ra vào `.env`.
 
-3. Dry-run migration:
+4. Chạy server local:
+
+```bash
+php -S localhost:8000
+```
+
+5. Mở trình duyệt:
+
+- Trang nhân viên: `http://localhost:8000/index.php`
+- Trang quản trị: `http://localhost:8000/admin.php`
+
+## Chạy bằng Docker
+
+```bash
+docker compose up --build
+```
+
+Sau đó mở:
+
+```text
+http://localhost:8080
+```
+
+## Cấu hình dữ liệu
+
+Toàn bộ cấu hình chính nằm trong:
+
+```text
+config/hr_config.json
+```
+
+Ứng dụng nạp cấu hình theo thứ tự:
+
+1. Giá trị mặc định trong `src/Config.php`
+2. `config/hr_config.json`
+3. Biến môi trường trong `.env` hoặc môi trường hệ thống
+
+Trong Admin Panel, bạn có thể cấu hình:
+
+- Nguồn xác thực nhân viên.
+- Danh sách kỳ lương.
+- File Excel/CSV hoặc Google Sheet cho từng kỳ.
+- Các cột hiển thị, cột tiền, cột nổi bật.
+- Thông tin thương hiệu hiển thị ở trang nhân viên.
+- Mật khẩu Admin.
+- Cấu hình bảng công và chia sẻ phiếu lương.
+
+## Quy trình sử dụng cơ bản
+
+1. Truy cập `admin.php` và đăng nhập.
+2. Cấu hình nguồn xác thực nhân viên: Google Sheets hoặc file Excel.
+3. Tạo kỳ lương mới.
+4. Chọn nguồn dữ liệu cho kỳ lương: Google Sheets hoặc upload `.xlsx`/`.csv`.
+5. Nhập tên các cột cần hiển thị.
+6. Bấm lưu cấu hình.
+7. Nhân viên vào `index.php`, nhập mã nhân viên và mật khẩu để tra cứu.
+
+## Bảo mật cần biết
+
+Các dữ liệu sau không nên commit lên Git:
+
+- `.env`
+- `vendor/`
+- `uploads/`
+- `runtime/`
+- file log, cache, file backup, file Excel thật
+
+Repo đã có `.gitignore` để loại các dữ liệu này.
+
+Khuyến nghị khi deploy:
+
+- Luôn đặt `APP_FILE_ENCRYPTION_KEY` trong `.env`.
+- Không để web server public trực tiếp thư mục `config/`, `runtime/`, `scripts/`.
+- Đảm bảo `uploads/.htaccess` có hiệu lực nếu dùng Apache.
+- Đổi mật khẩu Admin ngay sau khi cài đặt.
+- Đọc checklist bảo mật tại `docs/SECURE_DEPLOYMENT_CHECKLIST.md`.
+
+## Kiểm tra chất lượng
+
+Chạy smoke test:
+
+```bash
+php scripts/smoke_test.php
+```
+
+Chạy PHPUnit:
+
+```bash
+./vendor/bin/phpunit
+```
+
+Hoặc chạy bằng Composer:
+
+```bash
+composer check
+```
+
+## Mã hóa file đã upload
+
+1. Tạo khóa:
+
+```bash
+php scripts/generate_file_encryption_key.php
+```
+
+2. Thêm khóa vào `.env`.
+
+3. Kiểm tra migration trước:
 
 ```bash
 php scripts/migrate_encrypted_storage.php --dry-run
 ```
 
-4. Run migration:
+4. Chạy migration thật:
 
 ```bash
 php scripts/migrate_encrypted_storage.php
 ```
 
-5. Verify in admin diagnostics that `file_encryption.enabled` is `true`.
+## Tài liệu chi tiết
 
-## Local Runbook
+- Hướng dẫn Admin: `docs/ADMIN_GUIDE.md`
+- Kiến trúc hệ thống: `docs/ARCHITECTURE.md`
+- Hướng dẫn phát triển: `docs/DEVELOPMENT.md`
+- Vận hành production: `docs/OPERATIONS.md`
+- Checklist deploy an toàn: `docs/SECURE_DEPLOYMENT_CHECKLIST.md`
+- Chính sách bảo mật: `docs/SECURITY_POLICY.md`
 
-1. Create `.env` from `.env.example`.
-2. Ensure `uploads/` is writable and contains `.htaccess` on Apache.
-3. Run `php scripts/smoke_test.php`.
-4. Open `admin.php`, login, and verify:
-   - config save works
-   - upload accepts valid CSV/XLSX
-   - oversize sheet returns friendly validation error
-5. Open `index.php` and verify employee login and period data lookup.
+## Deploy production
 
-## Operational Targets (SLO Baseline)
+Tối thiểu cần chuẩn bị:
 
-- Admin login success: >= 99.5%
-- Data lookup success: >= 99.0%
-- p95 data lookup response: < 3 seconds
-- 5xx error rate: < 0.5%
+- PHP runtime ổn định.
+- Web root trỏ vào thư mục dự án.
+- `.env` có khóa mã hóa.
+- `uploads/` và `runtime/` có quyền ghi.
+- Backup định kỳ cho `config/`, `uploads/` và dữ liệu production.
+- HTTPS trước khi cho nhân viên sử dụng thật.
 
-## CI/CD and Quality Gates
+Với VPS hoặc hosting có Apache/Nginx, có thể deploy như PHP app thông thường. Với Docker, dùng `docker-compose.yml` có sẵn làm điểm bắt đầu.
 
-- CI workflow: `.github/workflows/ci.yml`
-- Pipeline includes lint, smoke test, PHPUnit, cache maintenance script, and dependency audit.
-- Recommended promotion flow: dev -> staging -> production with smoke test at each stage.
+## License
 
-## Diagnostics and Operations
-
-- Admin diagnostics page: `scripts/diagnostics.php` (admin only).
-- Operational runbook: `docs/OPERATIONS.md`
-- Security policy and retention guidance: `docs/SECURITY_POLICY.md`
-- Contributor / extension guide: `docs/DEVELOPMENT.md`
-- Cache housekeeping (optional cron): `php scripts/maintenance.php` or `composer maintenance`
+Xem file `LICENSE`.

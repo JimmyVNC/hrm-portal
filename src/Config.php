@@ -170,6 +170,85 @@ class Config {
         return $default;
     }
 
+    /**
+     * Ghi khóa mã hóa APP_FILE_ENCRYPTION_KEY xuống file .env một cách an toàn và ghi đè dòng cũ nếu có.
+     */
+    public static function saveEnvEncryptionKey(string $newKey): bool
+    {
+        $filePath = self::ENV_FILE;
+        $newKey = trim($newKey);
+        
+        $contents = '';
+        if (file_exists($filePath)) {
+            $contents = @file_get_contents($filePath);
+            if (!is_string($contents)) {
+                $contents = '';
+            }
+        }
+        
+        $lines = explode("\n", $contents);
+        $keyFound = false;
+        foreach ($lines as $idx => $line) {
+            $trimmedLine = trim($line);
+            if (strpos($trimmedLine, 'APP_FILE_ENCRYPTION_KEY=') === 0 || preg_match('/^\s*APP_FILE_ENCRYPTION_KEY\s*=/', $trimmedLine)) {
+                $lines[$idx] = 'APP_FILE_ENCRYPTION_KEY=' . $newKey;
+                $keyFound = true;
+                break;
+            }
+        }
+        
+        if (!$keyFound) {
+            if ($contents !== '' && substr($contents, -1) !== "\n") {
+                $lines[] = '';
+            }
+            $lines[] = 'APP_FILE_ENCRYPTION_KEY=' . $newKey;
+        }
+        
+        $newContents = implode("\n", $lines);
+        
+        $dir = dirname($filePath);
+        if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) {
+            return false;
+        }
+        
+        $tmpFile = tempnam($dir, 'env_');
+        if ($tmpFile === false) {
+            return false;
+        }
+        
+        $result = false;
+        $fp = @fopen($tmpFile, 'wb');
+        if ($fp !== false) {
+            if (@flock($fp, LOCK_EX)) {
+                $written = @fwrite($fp, $newContents);
+                if ($written === strlen($newContents)) {
+                    @fflush($fp);
+                    $result = true;
+                }
+                @flock($fp, LOCK_UN);
+            }
+            @fclose($fp);
+        }
+        
+        if (!$result) {
+            @unlink($tmpFile);
+            return false;
+        }
+        
+        @chmod($tmpFile, 0600);
+        if (!@rename($tmpFile, $filePath)) {
+            @unlink($tmpFile);
+            return false;
+        }
+        
+        @chmod($filePath, 0600);
+        putenv('APP_FILE_ENCRYPTION_KEY=' . $newKey);
+        $_ENV['APP_FILE_ENCRYPTION_KEY'] = $newKey;
+        $_SERVER['APP_FILE_ENCRYPTION_KEY'] = $newKey;
+        
+        return true;
+    }
+
     public static function getAppTimezone(): string {
         $timezone = (string) self::getEnvValue('APP_TIMEZONE', self::DEFAULT_TIMEZONE);
         return trim($timezone) !== '' ? trim($timezone) : self::DEFAULT_TIMEZONE;

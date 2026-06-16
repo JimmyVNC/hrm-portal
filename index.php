@@ -148,7 +148,7 @@ $isAdmin = !empty($_SESSION['hr_admin']);
 $safeHeroTitle = strip_tags((string) ($config['site_hero_title'] ?? ''), '<br>');
 $requestedPage = (string) ($_GET['page'] ?? '');
 $currentPage = in_array($requestedPage, ['attendance', 'payroll_result'], true) ? $requestedPage : 'payroll';
-$showAttendanceModule = CheckActions::isModuleEnabled($config) || $isAdmin;
+$showAttendanceModule = CheckActions::isModuleEnabled($config) || $isAdmin || !empty($_GET['share']);
 $latestPayrollUpdateLabel = DataActions::getLatestPayrollUpdateLabel($config);
 $employeeNotice = trim((string) ($config['employee_notice'] ?? ''));
 

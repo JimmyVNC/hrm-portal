@@ -51,7 +51,6 @@ class AdminActions {
     }
 
     public static function validateUploadedSpreadsheetLimits($tmpName, $ext, $sheetIndex, $maxRows, $maxCols): array {
-        $rows = [];
         if ($ext === 'xls') {
             return ['ok' => false, 'message' => 'File .xls chưa được hỗ trợ. Vui lòng chuyển sang .xlsx hoặc .csv.'];
         }
@@ -68,23 +67,19 @@ class AdminActions {
             $numRows = (int) ($selected['rows'] ?? 0);
             if ($numCols > $maxCols) return ['ok' => false, 'message' => 'Vượt giới hạn ' . $maxCols . ' cột (theo khai báo sheet).'];
             if ($numRows > $maxRows) return ['ok' => false, 'message' => 'Vượt giới hạn ' . $maxRows . ' dòng (theo khai báo sheet).'];
-            try {
-                $rows = SpreadsheetReader::fromLocalFile($tmpName, (int) $sheetIndex, (int) $maxRows, (int) $maxCols, (string) $ext);
-            } catch (\Throwable $e) {
-                return ['ok' => false, 'message' => $e->getMessage()];
-            }
+            return ['ok' => true];
         } else {
             $handle = fopen($tmpName, 'r');
             if ($handle === false) return ['ok' => false, 'message' => 'Không thể đọc file CSV.'];
+            $rowCount = 0;
             while (($data = fgetcsv($handle, 0, ',')) !== false) {
-                $rows[] = $data;
-                if (count($rows) > $maxRows) { fclose($handle); return ['ok' => false, 'message' => 'Vượt giới hạn ' . $maxRows . ' dòng.']; }
+                $rowCount++;
+                if ($rowCount > $maxRows) { fclose($handle); return ['ok' => false, 'message' => 'Vượt giới hạn ' . $maxRows . ' dòng.']; }
+                if (count($data) > $maxCols) { fclose($handle); return ['ok' => false, 'message' => 'Vượt giới hạn ' . $maxCols . ' cột.']; }
             }
             fclose($handle);
+            return ['ok' => true];
         }
-        if (count($rows) > $maxRows) return ['ok' => false, 'message' => 'Vượt giới hạn ' . $maxRows . ' dòng.'];
-        foreach ($rows as $row) if (is_array($row) && count($row) > $maxCols) return ['ok' => false, 'message' => 'Vượt giới hạn ' . $maxCols . ' cột.'];
-        return ['ok' => true];
     }
 
     public static function storeUploadedSpreadsheet($fileField, $index = null, $sheetIndex = 0, $maxRows = 50000, $maxCols = 1000): array {
@@ -353,7 +348,60 @@ class AdminActions {
 
         if (empty($_SESSION['hr_admin'])) return ['msg' => 'Unauthorized', 'type' => 'error'];
 
+        if ($action === 'reset_lost_encryption_key') {
+            $newKey = (string) ($_POST['app_file_encryption_key'] ?? '');
+            $uploadsDir = Config::uploadsDir();
+            $backupsDir = $uploadsDir . DIRECTORY_SEPARATOR . 'backups';
+            
+            $patterns = [
+                $uploadsDir . DIRECTORY_SEPARATOR . 'auth_*.xlsx',
+                $uploadsDir . DIRECTORY_SEPARATOR . 'up_*.xlsx',
+                $uploadsDir . DIRECTORY_SEPARATOR . 'up_*.csv',
+                $backupsDir . DIRECTORY_SEPARATOR . 'auth_backup_*.xlsx',
+            ];
+            
+            foreach ($patterns as $pattern) {
+                foreach (glob($pattern) ?: [] as $path) {
+                    if (is_file($path)) {
+                        @unlink($path);
+                    }
+                }
+            }
+            
+            if (isset($config['periods']) && is_array($config['periods'])) {
+                foreach ($config['periods'] as $idx => $period) {
+                    $config['periods'][$idx]['local_file'] = '';
+                }
+            }
+            $config['auth_local_file'] = '';
+            
+            Config::saveConfig($config);
+            Config::saveEnvEncryptionKey($newKey);
+            
+            Security::auditLog('admin_reset_lost_encryption_key');
+            return ['msg' => 'Đã xóa toàn bộ file cũ và áp dụng khóa mã hóa mới thành công. Hãy tải lên lại dữ liệu.', 'type' => 'success'];
+        }
+
         if ($action === 'save_config_all') {
+            @file_put_contents(
+                Config::uploadsDir() . 'debug_post.log',
+                json_encode([
+                    'POST' => $_POST,
+                    'FILES' => $_FILES
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+            );
+
+            if (isset($_POST['app_file_encryption_key'])) {
+                $oldKey = Config::getEnvValue('APP_FILE_ENCRYPTION_KEY', '');
+                $newKey = (string) $_POST['app_file_encryption_key'];
+                if ($oldKey !== $newKey) {
+                    $rotateResult = \App\Services\FileCrypto::rotateKey($oldKey, $newKey);
+                    if (!$rotateResult['success']) {
+                        return ['msg' => 'Lỗi xoay vòng khóa: ' . $rotateResult['error'], 'type' => 'error'];
+                    }
+                    Config::saveEnvEncryptionKey($newKey);
+                }
+            }
             foreach (['site_company','site_logo_text','site_hero_title','site_hero_desc','site_footer','employee_notice'] as $key) {
                 if (isset($_POST[$key])) $config[$key] = trim($_POST[$key]);
             }
@@ -380,6 +428,7 @@ class AdminActions {
                 else return ['msg' => 'Lỗi file xác thực: ' . $up['message'], 'type' => 'error'];
             }
 
+            $existingPeriods = isset($config['periods']) && is_array($config['periods']) ? $config['periods'] : [];
             $periods = [];
             if (isset($_POST['period_labels']) && is_array($_POST['period_labels'])) {
                 foreach ($_POST['period_labels'] as $idx => $label) {
@@ -388,10 +437,29 @@ class AdminActions {
                     $localFile  = $_POST['period_local_files'][$idx] ?? '';
                     $sheetIndex = (int) ($_POST['period_sheet_indexes'][$idx] ?? 0);
                     $sheetName = self::normalizeSheetName($_POST['period_sheet_names'][$idx] ?? '');
-                    if ($sourceType === 'local' && !empty($_FILES['period_files']['name'][$idx])) {
-                        $up = self::storeUploadedSpreadsheet('period_files', $idx, $sheetIndex);
+                    
+                    $rowId = $_POST['period_ids'][$idx] ?? '';
+                    $fileKey = $rowId !== '' ? 'period_file_' . $rowId : '';
+                    $existingPeriod = null;
+                    if ($rowId !== '' && ctype_digit((string) $rowId)) {
+                        $existingIndex = (int) $rowId;
+                        if (isset($existingPeriods[$existingIndex]) && is_array($existingPeriods[$existingIndex])) {
+                            $existingPeriod = $existingPeriods[$existingIndex];
+                        }
+                    }
+                    
+                    if ($sourceType === 'local' && $fileKey !== '' && !empty($_FILES[$fileKey]['name'])) {
+                        $up = self::storeUploadedSpreadsheet($fileKey, null, $sheetIndex);
                         if ($up['ok']) $localFile = $up['path'];
                         else return ['msg' => 'Lỗi file kỳ lương [' . $label . ']: ' . $up['message'], 'type' => 'error'];
+                    }
+                    if (
+                        $sourceType === 'local'
+                        && trim((string) $localFile) === ''
+                        && is_array($existingPeriod)
+                        && (($existingPeriod['source_type'] ?? 'google') === 'local')
+                    ) {
+                        $localFile = (string) ($existingPeriod['local_file'] ?? '');
                     }
                     if ($sourceType === 'local') {
                         $resolvedLocalFile = AuthActions::resolveUploadFilePath($localFile);
@@ -411,10 +479,11 @@ class AdminActions {
                             if (is_array($sheetInfo) && isset($sheetInfo['name'])) {
                                 $sheetName = self::normalizeSheetName((string) $sheetInfo['name']);
                             }
+                            $maxValidateRows = (int) Config::getEnvValue('SCHEMA_VALIDATE_MAX_ROWS', 5000) + (int) Config::getEnvValue('HEADER_SCAN_LIMIT', 20);
                             $periodRows = SpreadsheetReader::fromLocalFile(
                                 (string) $resolvedLocalFile,
                                 $sheetIndex,
-                                (int) Config::getEnvValue('PERIOD_MAX_ROWS', 50000),
+                                $maxValidateRows,
                                 (int) Config::getEnvValue('PERIOD_MAX_COLS', 1000)
                             );
                             $validation = SpreadsheetSchemaValidator::validatePeriodDataset(
@@ -430,7 +499,12 @@ class AdminActions {
                                 return ['msg' => 'Lỗi schema kỳ [' . $label . ']: ' . ($validation['message'] ?? 'Không rõ nguyên nhân.'), 'type' => 'error'];
                             }
                         } catch (\Throwable $e) {
-                            return ['msg' => 'Không thể đọc dữ liệu kỳ [' . $label . ']: ' . $e->getMessage(), 'type' => 'error'];
+                            $isNewUpload = ($sourceType === 'local' && $fileKey !== '' && !empty($_FILES[$fileKey]['name']));
+                            if (!$isNewUpload && (strpos($e->getMessage(), 'giải mã') !== false || strpos($e->getMessage(), 'decrypt') !== false || strpos($e->getMessage(), 'môi trường') !== false || strpos($e->getMessage(), 'không tồn tại') !== false || strpos($e->getMessage(), 'không đọc được') !== false)) {
+                                error_log("[HRM] Warning: Bỏ qua lỗi đọc file kỳ lương cũ ['" . $label . "']: " . $e->getMessage());
+                            } else {
+                                return ['msg' => 'Không thể đọc dữ liệu kỳ [' . $label . ']: ' . $e->getMessage(), 'type' => 'error'];
+                            }
                         }
                     } else {
                         $localFile = '';

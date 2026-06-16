@@ -8,6 +8,9 @@
 /__MACOSX/
 
 /error_log
+/Archive.zip
+/output.txt
+/test_vn.xlsx
 
 *.log
 *.tmp

@@ -74,4 +74,69 @@ final class AdminFileManagerTest extends TestCase
 
         @unlink($fixture);
     }
+
+    public function testMergeEmployeesByIdProceedsOnCorruptCurrentFile(): void
+    {
+        $tempDir = sys_get_temp_dir() . '/hrm-test-merge-' . uniqid('', true);
+        mkdir($tempDir, 0700, true);
+        $corruptFile = $tempDir . '/corrupt_auth.xlsx';
+        
+        file_put_contents($corruptFile, "HRMENC1\0invalidpayload-not-gcm");
+
+        $incoming = [
+            'headers' => ['MÃ NV', 'HỌ TÊN', 'MẬT KHẨU'],
+            'normalized_headers' => ['MÃ NV', 'HỌ TÊN', 'MẬT KHẨU'],
+            'rows' => [
+                ['E001', 'Van A', 'pass123']
+            ],
+            'emp_idx' => 0,
+            'source_row_numbers' => [2]
+        ];
+
+        $config = [
+            'col_emp_id' => 'MÃ NV',
+            'col_password' => 'MẬT KHẨU',
+            'col_emp_name' => 'HỌ TÊN'
+        ];
+
+        $reflector = new \ReflectionClass(AdminFileManager::class);
+        $method = $reflector->getMethod('mergeEmployeesById');
+        
+        $result = $method->invoke(null, $corruptFile, $incoming, $config);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(1, $result['new_added']);
+        $this->assertSame(0, $result['existing_updated']);
+        $this->assertCount(2, $result['rows']);
+
+        @unlink($corruptFile);
+        @rmdir($tempDir);
+    }
+
+    public function testMergeEmployeesByIdStoresPlaintextPassword(): void
+    {
+        $incoming = [
+            'headers' => ['MÃ NV', 'HỌ TÊN', 'MẬT KHẨU'],
+            'normalized_headers' => ['MÃ NV', 'HỌ TÊN', 'MẬT KHẨU'],
+            'rows' => [
+                ['E001', 'Van A', 'plain-text-pass-123']
+            ],
+            'emp_idx' => 0,
+            'source_row_numbers' => [2]
+        ];
+
+        $config = [
+            'col_emp_id' => 'MÃ NV',
+            'col_password' => 'MẬT KHẨU',
+            'col_emp_name' => 'HỌ TÊN'
+        ];
+
+        $reflector = new \ReflectionClass(AdminFileManager::class);
+        $method = $reflector->getMethod('mergeEmployeesById');
+        
+        $result = $method->invoke(null, null, $incoming, $config);
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('plain-text-pass-123', $result['rows'][1][2]);
+    }
 }

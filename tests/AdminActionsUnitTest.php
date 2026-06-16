@@ -65,4 +65,65 @@ final class AdminActionsUnitTest extends TestCase {
         $this->assertTrue(AdminActions::isUploadedFileInUse($config, 'payroll.xlsx'));
         $this->assertFalse(AdminActions::isUploadedFileInUse($config, 'missing.xlsx'));
     }
+
+    public function testResetLostEncryptionKeyClearsConfigAndFiles(): void {
+        $backupEnv = @file_get_contents(\App\Config::ENV_FILE);
+        $configPath = \App\Config::projectRoot() . '/config/hr_config.json';
+        $backupConfig = @file_get_contents($configPath);
+
+        $tempDir = sys_get_temp_dir() . '/hrm-admin-test-' . uniqid('', true);
+        mkdir($tempDir, 0700, true);
+        mkdir($tempDir . '/backups', 0700, true);
+        
+        putenv('UPLOADS_DIR=' . $tempDir);
+        $_ENV['UPLOADS_DIR'] = $tempDir;
+        $_SERVER['UPLOADS_DIR'] = $tempDir;
+
+        $file1 = $tempDir . '/up_test.xlsx';
+        $file2 = $tempDir . '/auth_test.xlsx';
+        file_put_contents($file1, 'data1');
+        file_put_contents($file2, 'data2');
+
+        $config = [
+            'auth_local_file' => 'uploads/auth_test.xlsx',
+            'periods' => [
+                [
+                    'label' => 'Tháng 1',
+                    'local_file' => 'uploads/up_test.xlsx',
+                ]
+            ]
+        ];
+
+        if (session_status() === PHP_SESSION_NONE) {
+            @session_start();
+        }
+        $_SESSION['hr_admin'] = true;
+
+        $_POST['action'] = 'reset_lost_encryption_key';
+        $_POST['app_file_encryption_key'] = 'base64:newkeynewkeynewkeynewkeynewkeynewkeynew=';
+
+        $res = AdminActions::handle($config);
+        $this->assertSame('success', $res['type']);
+
+        $this->assertSame('', $config['auth_local_file']);
+        $this->assertSame('', $config['periods'][0]['local_file']);
+
+        $this->assertFalse(file_exists($file1));
+        $this->assertFalse(file_exists($file2));
+
+        $this->assertSame('base64:newkeynewkeynewkeynewkeynewkeynewkeynew=', \App\Config::getEnvValue('APP_FILE_ENCRYPTION_KEY'));
+
+        putenv('UPLOADS_DIR');
+        unset($_ENV['UPLOADS_DIR'], $_SERVER['UPLOADS_DIR']);
+        unset($_POST['action'], $_POST['app_file_encryption_key']);
+        unset($_SESSION['hr_admin']);
+        if (is_string($backupEnv)) {
+            file_put_contents(\App\Config::ENV_FILE, $backupEnv);
+        } else {
+            @unlink(\App\Config::ENV_FILE);
+        }
+        if (is_string($backupConfig)) {
+            file_put_contents($configPath, $backupConfig);
+        }
+    }
 }

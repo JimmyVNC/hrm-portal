@@ -76,6 +76,288 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'downloa
     AdminFileManager::downloadAuthFile($config); // exits internally
 }
 
+// ─── GET: Download ENV File ────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'download_env') {
+    if (empty($_SESSION['hr_admin']) || !Security::validateCsrfToken($_GET['csrf_token'] ?? '')) {
+        http_response_code(403);
+        echo 'Forbidden';
+        exit;
+    }
+    $envFile = \App\Config::ENV_FILE;
+    if (!file_exists($envFile) || !is_file($envFile)) {
+        http_response_code(404);
+        echo 'File .env không tồn tại.';
+        exit;
+    }
+    $contents = @file_get_contents($envFile);
+    if ($contents === false) {
+        http_response_code(500);
+        echo 'Không thể đọc tệp .env.';
+        exit;
+    }
+    
+    \App\Security::auditLog('admin_download_env', ['filename' => '.env']);
+    
+    header('Content-Type: text/plain');
+    header('Content-Disposition: attachment; filename=".env"');
+    header('Content-Length: ' . strlen($contents));
+    header('Cache-Control: private, no-cache, no-store, must-revalidate');
+    header('Pragma: no-cache');
+    echo $contents;
+    exit;
+}
+
+// ─── AJAX: Upload ENV File ─────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['ajax_action'] ?? '') === 'upload_env') {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['hr_admin']) || !Security::validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        echo json_encode(['ok' => false, 'message' => 'Unauthorized hoặc CSRF không hợp lệ.']);
+        exit;
+    }
+    
+    $fileInput = $_FILES['env_file'] ?? null;
+    if (!$fileInput || $fileInput['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['ok' => false, 'message' => 'Lỗi tải tệp lên (code: ' . ($fileInput['error'] ?? UPLOAD_ERR_NO_FILE) . ').']);
+        exit;
+    }
+    
+    $tmpName = $fileInput['tmp_name'];
+    $size = $fileInput['size'];
+    if ($size <= 0 || $size > 1024 * 1024) {
+        echo json_encode(['ok' => false, 'message' => 'Kích thước tệp không hợp lệ (tối đa 1 MB).']);
+        exit;
+    }
+    
+    $content = @file_get_contents($tmpName);
+    if ($content === false) {
+        echo json_encode(['ok' => false, 'message' => 'Không thể đọc tệp đã tải lên.']);
+        exit;
+    }
+    
+    // Kiểm tra cú pháp cơ bản của file .env và sự hiện diện của APP_FILE_ENCRYPTION_KEY
+    $lines = explode("\n", $content);
+    $isValid = true;
+    $lineNum = 0;
+    $hasEncryptionKey = false;
+    foreach ($lines as $line) {
+        $lineNum++;
+        $trimmed = trim($line);
+        if ($trimmed === '' || str_starts_with($trimmed, '#')) {
+            continue;
+        }
+        if (!str_contains($trimmed, '=')) {
+            $isValid = false;
+            break;
+        }
+        $parts = explode('=', $trimmed, 2);
+        $key = trim($parts[0]);
+        if ($key === '' || !preg_match('/^[A-Za-z0-9_]+$/', $key)) {
+            $isValid = false;
+            break;
+        }
+        if ($key === 'APP_FILE_ENCRYPTION_KEY') {
+            $hasEncryptionKey = true;
+        }
+    }
+    
+    if (!$isValid) {
+        echo json_encode(['ok' => false, 'message' => "Cú pháp tệp .env không hợp lệ tại dòng $lineNum. Mỗi dòng cấu hình phải có dạng KEY=VALUE."]);
+        exit;
+    }
+    
+    if (!$hasEncryptionKey) {
+        echo json_encode(['ok' => false, 'message' => 'Tệp .env thiếu biến cấu hình bắt buộc APP_FILE_ENCRYPTION_KEY.']);
+        exit;
+    }
+    
+    $envFile = \App\Config::ENV_FILE;
+    
+    // Tạo bản sao lưu cho tệp .env hiện tại nếu có
+    if (file_exists($envFile)) {
+        $backupDir = \App\Config::uploadsDir() . 'backups' . DIRECTORY_SEPARATOR;
+        if (is_dir($backupDir) || @mkdir($backupDir, 0700, true)) {
+            @copy($envFile, $backupDir . 'env_backup_' . time() . '.env');
+        }
+    }
+    $dir = dirname($envFile);
+    $tmpFile = tempnam($dir, 'env_up_');
+    if ($tmpFile === false) {
+        echo json_encode(['ok' => false, 'message' => 'Không thể tạo tệp tạm để ghi.']);
+        exit;
+    }
+    
+    $fp = @fopen($tmpFile, 'wb');
+    $written = false;
+    if ($fp !== false) {
+        if (@flock($fp, LOCK_EX)) {
+            $writtenBytes = @fwrite($fp, $content);
+            if ($writtenBytes === strlen($content)) {
+                @fflush($fp);
+                $written = true;
+            }
+            @flock($fp, LOCK_UN);
+        }
+        @fclose($fp);
+    }
+    
+    if (!$written) {
+        @unlink($tmpFile);
+        echo json_encode(['ok' => false, 'message' => 'Ghi cấu hình thất bại.']);
+        exit;
+    }
+    
+    @chmod($tmpFile, 0600);
+    if (!@rename($tmpFile, $envFile)) {
+        @unlink($tmpFile);
+        echo json_encode(['ok' => false, 'message' => 'Không thể cập nhật tệp .env.']);
+        exit;
+    }
+    @chmod($envFile, 0600);
+    
+    \App\Config::loadEnvFile();
+    \App\Security::auditLog('admin_upload_env', ['size' => $size]);
+    
+    echo json_encode(['ok' => true, 'message' => 'Đã khôi phục và cập nhật cấu hình tệp .env thành công!']);
+    exit;
+}
+
+// ─── AJAX: Recreate ENV File ───────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['ajax_action'] ?? '') === 'recreate_env') {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['hr_admin']) || !Security::validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        echo json_encode(['ok' => false, 'message' => 'Unauthorized hoặc CSRF không hợp lệ.']);
+        exit;
+    }
+    
+    $envFile = \App\Config::ENV_FILE;
+    
+    // Tạo bản sao lưu cho tệp .env hiện tại nếu có
+    if (file_exists($envFile)) {
+        $backupDir = \App\Config::uploadsDir() . 'backups' . DIRECTORY_SEPARATOR;
+        if (is_dir($backupDir) || @mkdir($backupDir, 0700, true)) {
+            @copy($envFile, $backupDir . 'env_backup_' . time() . '.env');
+        }
+    }
+    
+    $newKey = 'base64:' . base64_encode(random_bytes(32));
+    $content = "# HRM Portal Environment Configuration\n";
+    $content .= "APP_FILE_ENCRYPTION_KEY=" . $newKey . "\n";
+    
+    $dir = dirname($envFile);
+    $tmpFile = tempnam($dir, 'env_rec_');
+    if ($tmpFile === false) {
+        echo json_encode(['ok' => false, 'message' => 'Không thể tạo tệp tạm để ghi.']);
+        exit;
+    }
+    
+    $fp = @fopen($tmpFile, 'wb');
+    $written = false;
+    if ($fp !== false) {
+        if (@flock($fp, LOCK_EX)) {
+            $writtenBytes = @fwrite($fp, $content);
+            if ($writtenBytes === strlen($content)) {
+                @fflush($fp);
+                $written = true;
+            }
+            @flock($fp, LOCK_UN);
+        }
+        @fclose($fp);
+    }
+    
+    if (!$written) {
+        @unlink($tmpFile);
+        echo json_encode(['ok' => false, 'message' => 'Tạo cấu hình thất bại.']);
+        exit;
+    }
+    
+    @chmod($tmpFile, 0600);
+    if (!@rename($tmpFile, $envFile)) {
+        @unlink($tmpFile);
+        echo json_encode(['ok' => false, 'message' => 'Không thể ghi đè tệp .env mới.']);
+        exit;
+    }
+    @chmod($envFile, 0600);
+    
+    putenv('APP_FILE_ENCRYPTION_KEY=' . $newKey);
+    $_ENV['APP_FILE_ENCRYPTION_KEY'] = $newKey;
+    $_SERVER['APP_FILE_ENCRYPTION_KEY'] = $newKey;
+    
+    \App\Security::auditLog('admin_recreate_env', []);
+    
+    echo json_encode(['ok' => true, 'message' => 'Tệp .env đã được tạo lại thành công với khóa mã hóa mới.']);
+    exit;
+}
+// ─── AJAX: Delete Excel File from Period ────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['ajax_action'] ?? '') === 'delete_period_excel') {
+    header('Content-Type: application/json; charset=utf-8');
+    if (empty($_SESSION['hr_admin']) || !Security::validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        echo json_encode(['ok' => false, 'message' => 'Unauthorized hoặc CSRF không hợp lệ.']);
+        exit;
+    }
+    
+    $periodIdx = isset($_POST['period_index']) ? (int)$_POST['period_index'] : -1;
+    $filename = basename((string)($_POST['filename'] ?? ''));
+    
+    if ($periodIdx < 0 || !isset($config['periods'][$periodIdx])) {
+        echo json_encode(['ok' => false, 'message' => 'Kỳ lương không hợp lệ.']);
+        exit;
+    }
+    if ($filename === '') {
+        echo json_encode(['ok' => false, 'message' => 'Tên file không hợp lệ.']);
+        exit;
+    }
+    
+    $period = &$config['periods'][$periodIdx];
+    $localFile = (string)($period['local_file'] ?? '');
+    
+    if (basename($localFile) !== $filename) {
+        echo json_encode(['ok' => false, 'message' => 'File Excel không khớp với cấu hình kỳ lương.']);
+        exit;
+    }
+    
+    // 1. Gỡ liên kết file trong config
+    $period['local_file'] = '';
+    $period['sheet_name'] = '';
+    $period['sheet_index'] = 0;
+    
+    if (!Config::saveConfig($config)) {
+        echo json_encode(['ok' => false, 'message' => 'Không thể cập nhật cấu hình kỳ lương.']);
+        exit;
+    }
+    
+    // 2. Xóa file khỏi disk nếu không còn kỳ lương hoặc tệp xác thực nào khác sử dụng
+    $isUsed = AdminActions::isUploadedFileInUse($config, $filename);
+    $deletedFile = false;
+    
+    if (!$isUsed) {
+        $uploadDir = rtrim(Config::uploadsDir(), '/\\');
+        $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $filename;
+        $realUploadDir = realpath($uploadDir);
+        $realTarget = realpath($targetPath);
+        
+        if ($realUploadDir !== false && $realTarget !== false && strpos($realTarget, $realUploadDir . DIRECTORY_SEPARATOR) === 0) {
+            if (@unlink($realTarget)) {
+                $deletedFile = true;
+            }
+        }
+    }
+    
+    \App\Security::auditLog('admin_delete_period_excel', [
+        'period_index' => $periodIdx,
+        'filename' => $filename,
+        'deleted_from_disk' => $deletedFile
+    ]);
+    
+    echo json_encode([
+        'ok' => true, 
+        'message' => $deletedFile 
+            ? 'Đã xóa file Excel khỏi kỳ lương và xóa hoàn toàn khỏi máy chủ!' 
+            : 'Đã gỡ liên kết file Excel khỏi kỳ lương (tệp tin vẫn được giữ lại do đang được dùng ở nơi khác).'
+    ]);
+    exit;
+}
+
+
 // ─── AJAX: Upload Auth File ─────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['ajax_action'] ?? '') === 'upload_auth_file') {
     header('Content-Type: application/json; charset=utf-8');
@@ -240,11 +522,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['ajax_action'] ?? '') === '
         'share_token_prefix' => substr($shareToken, 0, 8),
         'expires_at' => $shareExpiresAt,
     ]);
+    $scheme = Config::isHttpsRequest() ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $uri = $_SERVER['REQUEST_URI'] ?? '';
+    $path = preg_replace('/admin\.php.*$/i', '', $uri);
+    $baseUrl = $scheme . '://' . $host . rtrim($path, '/');
+    $shareUrl = $baseUrl . '/index.php?page=attendance&share=' . $shareToken;
+
     echo json_encode([
         'ok' => true,
         'state' => $state,
         'share_token' => $shareToken,
-        'share_url' => 'index.php?page=attendance&share=' . $shareToken,
+        'share_url' => $shareUrl,
         'share_expires_at' => $shareExpiresAt,
         'expires_at_input' => $expiresAtInput,
     ]);
@@ -443,11 +732,15 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
 </div>
 <?php else: ?>
 <div class="admin-container">
+        <!-- Sidebar Overlay -->
+        <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
         <!-- Sidebar -->
         <aside class="admin-sidebar">
             <div class="sidebar-brand">
                 <div class="sidebar-logo"><?= htmlspecialchars($config['site_logo_text'] ?? 'HR') ?></div>
                 <div class="sidebar-title">Management</div>
+                <button type="button" class="sidebar-close-btn" id="sidebar-close-btn" aria-label="Đóng menu"><i data-lucide="x"></i></button>
             </div>
             <div class="sidebar-nav">
                 <div class="sidebar-label">Cấu hình</div>
@@ -461,6 +754,7 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                 
                 <div class="sidebar-label">Bảo mật</div>
                 <button type="button" class="admin-menu-item" data-target="tab-pass" data-label="Mật khẩu" onclick="switchTab('tab-pass')"><i data-lucide="key"></i> <span>Mật khẩu</span></button>
+                <button type="button" class="admin-menu-item" data-target="tab-env" data-label="Cấu hình ENV" onclick="switchTab('tab-env')"><i data-lucide="settings-2"></i> <span>Cấu hình ENV</span></button>
                 <a href="index.php" class="admin-menu-item" target="_blank"><i data-lucide="external-link"></i> <span>Trang chủ NV</span></a>
 
                 <form method="POST" style="margin-top:auto;">
@@ -474,22 +768,14 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
         <!-- Main -->
         <main class="admin-main">
             <header class="admin-header">
+                <button type="button" class="admin-sidebar-toggle-btn" id="admin-sidebar-toggle-btn" aria-label="Mở menu">
+                    <i data-lucide="menu"></i>
+                </button>
                 <div class="admin-header-title" id="admin-header-title" data-default-title="Hệ thống Quản trị">Hệ thống Quản trị</div>
                 <div class="admin-header-actions">
                     <span class="admin-badge">Admin Session Active</span>
                 </div>
             </header>
-
-            <nav class="admin-mobile-tabs" aria-label="Điều hướng nhanh admin">
-                <button type="button" class="admin-mobile-tab active" data-target="tab-periods" data-label="Kỳ Lương" onclick="switchTab('tab-periods')"><i data-lucide="calendar"></i><span>Kỳ lương</span></button>
-                <button type="button" class="admin-mobile-tab" data-target="tab-auth" data-label="Xác thực" onclick="switchTab('tab-auth')"><i data-lucide="shield"></i><span>Xác thực</span></button>
-                <button type="button" class="admin-mobile-tab" data-target="tab-lookup" data-label="Tra cứu nhanh" onclick="switchTab('tab-lookup')"><i data-lucide="search-check"></i><span>Tra cứu</span></button>
-                <button type="button" class="admin-mobile-tab" data-target="tab-attendance" data-label="Chấm công" onclick="switchTab('tab-attendance')"><i data-lucide="clock-3"></i><span>Chấm công</span></button>
-                <button type="button" class="admin-mobile-tab" data-target="tab-files" data-label="Tệp tin" onclick="switchTab('tab-files')"><i data-lucide="folder"></i><span>Tệp</span></button>
-                <button type="button" class="admin-mobile-tab" data-target="tab-cols" data-label="Cấu trúc" onclick="switchTab('tab-cols')"><i data-lucide="layout-grid"></i><span>Cột</span></button>
-                <button type="button" class="admin-mobile-tab" data-target="tab-ui" data-label="Giao diện" onclick="switchTab('tab-ui')"><i data-lucide="palette"></i><span>Giao diện</span></button>
-                <button type="button" class="admin-mobile-tab" data-target="tab-pass" data-label="Mật khẩu" onclick="switchTab('tab-pass')"><i data-lucide="key"></i><span>Mật khẩu</span></button>
-            </nav>
 
             <div class="admin-content">
                 <?php if ($adminMsg): ?>
@@ -529,13 +815,17 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                                 <div class="period-list">
 	                                    <?php foreach (($config['periods'] ?? []) as $idx => $p): 
 	                                        $isLocal = ($p['source_type'] ?? '') === 'local';
-	                                        $hasFile = $isLocal && !empty($p['local_file']);
+	                                        $currentLocalFile = (string) ($p['local_file'] ?? '');
+	                                        $hasFile = $isLocal && $currentLocalFile !== '';
 	                                        $isEnabled = !array_key_exists('enabled', $p) || $p['enabled'] !== false;
-                                            $localReady = $hasFile && is_file(\App\Config::uploadsDir() . basename((string) ($p['local_file'] ?? '')));
+                                            $resolvedLocalPath = $hasFile ? \App\Application\AuthActions::resolveUploadFilePath($currentLocalFile) : false;
+                                            $localReady = $resolvedLocalPath !== false;
                                             $googleReady = !$isLocal && trim((string) ($p['sheet_id'] ?? '')) !== '';
                                             $dataReady = $isLocal ? $localReady : $googleReady;
+                                            $currentLocalFileListed = false;
 	                                    ?>
                                     <div class="period-row">
+                                        <input type="hidden" name="period_ids[]" value="<?= $idx ?>">
                                         <div class="period-header" onclick="togglePeriodCard(this)">
                                             <div class="period-meta">
                                                 <i data-lucide="calendar" class="text-muted"></i>
@@ -590,11 +880,11 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                                                         <input type="text" name="period_sheet_ids[]" class="field-input mono" value="<?= htmlspecialchars($p['sheet_id'] ?? '') ?>">
                                                     </div>
                                                     <div class="field-group">
-                                                        <label class="field-label">GID</label>
-                                                        <input type="text" name="period_gids[]" class="field-input mono" value="<?= htmlspecialchars($p['gid'] ?? '0') ?>">
-                                                    </div>
-                                                </div>
-                                            </div>
+                                                         <label class="field-label">GID</label>
+                                                         <input type="text" name="period_gids[]" class="field-input mono" value="<?= htmlspecialchars($p['gid'] ?? '0') ?>">
+                                                     </div>
+                                                 </div>
+                                             </div>
                                             <div class="source-local" style="<?= ($p['source_type']??'local')!=='local'?'display:none;':'' ?>">
                                                 <div class="field-grid-2">
                                                     <div class="field-group">
@@ -602,17 +892,29 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                                                         <select name="period_local_files[]" class="field-input period-local-file-select" onchange="inspectPeriodLocalSheets(this)">
                                                             <option value="">Chọn file đã tải lên</option>
                                                             <?php foreach ($spreadsheetUploadOptions as $uploadOption): ?>
-                                                                <option value="<?= htmlspecialchars($uploadOption['path']) ?>" <?= ($p['local_file'] ?? '') === $uploadOption['path'] ? 'selected' : '' ?>>
+                                                                <?php $isCurrentLocalFile = $currentLocalFile === $uploadOption['path']; ?>
+                                                                <?php if ($isCurrentLocalFile) $currentLocalFileListed = true; ?>
+                                                                <option value="<?= htmlspecialchars($uploadOption['path']) ?>" <?= $isCurrentLocalFile ? 'selected' : '' ?>>
                                                                     <?= htmlspecialchars($uploadOption['label']) ?>
                                                                 </option>
                                                             <?php endforeach; ?>
+                                                            <?php if ($hasFile && !$currentLocalFileListed): ?>
+                                                                <option value="<?= htmlspecialchars($currentLocalFile) ?>" selected>
+                                                                    <?= htmlspecialchars(basename($currentLocalFile)) ?> (đang dùng)
+                                                                </option>
+                                                            <?php endif; ?>
                                                         </select>
-                                                        <input type="file" name="period_files[]" class="field-input period-file-input" accept=".csv,.xlsx" onchange="inspectPeriodLocalSheets(this)">
+                                                        <input type="file" name="period_file_<?= $idx ?>" class="field-input period-file-input" accept=".csv,.xlsx" onchange="inspectPeriodLocalSheets(this)">
                                                         <?php if ($hasFile): ?>
-                                                            <div class="field-file-status exists">
-                                                                <i data-lucide="check-circle"></i>
-                                                                <span>Hiện có: <?= htmlspecialchars(basename($p['local_file'])) ?></span>
-                                                            </div>
+                                                             <div class="field-file-status exists" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                                                                 <span style="display: flex; align-items: center; gap: 6px;">
+                                                                     <i data-lucide="check-circle"></i>
+                                                                     <span>Hiện có: <?= htmlspecialchars(basename($p['local_file'])) ?></span>
+                                                                 </span>
+                                                                 <button type="button" class="btn btn-outline-danger btn-sm" style="padding: 2px 6px; font-size: 0.8rem; height: auto; border-color: #dc2626; color: #dc2626; background: transparent; cursor: pointer;" onclick="deletePeriodExcelFile(this, <?= $idx ?>, '<?= htmlspecialchars(basename($p['local_file']), ENT_QUOTES) ?>')">
+                                                                     <i data-lucide="trash-2" style="width: 12px; height: 12px; margin-right: 2px; vertical-align: middle;"></i> Xóa file
+                                                                 </button>
+                                                             </div>
                                                         <?php else: ?>
                                                             <div class="field-file-status empty">
                                                                 <i data-lucide="file-warning"></i>
@@ -748,8 +1050,16 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                                 <div class="settings-group">
                                     <div class="settings-group-title"><i data-lucide="database"></i> Nguồn dữ liệu nhân sự</div>
                                     <div class="field-group">
-                                        <label class="field-label">Loại nguồn</label>
-                                        <select name="auth_source_type" class="field-input" onchange="toggleSourceType(this)">
+                                        <label class="field-label">Loại nguồn dữ liệu nhân sự</label>
+                                        <div class="segmented-control" id="auth-source-type-segments">
+                                            <button type="button" class="segment-btn <?= ($config['auth_source_type']??'google')==='google'?'active':'' ?>" data-value="google">
+                                                <i data-lucide="globe"></i> Google Sheets
+                                            </button>
+                                            <button type="button" class="segment-btn <?= ($config['auth_source_type']??'')==='local'?'active':'' ?>" data-value="local">
+                                                <i data-lucide="database"></i> File Excel
+                                            </button>
+                                        </div>
+                                        <select name="auth_source_type" id="auth-source-type-select" class="field-input" onchange="toggleSourceType(this)" style="display:none;">
                                             <option value="google" <?= ($config['auth_source_type']??'google')==='google'?'selected':'' ?>>Google Sheets</option>
                                             <option value="local" <?= ($config['auth_source_type']??'')=='local'?'selected':'' ?>>File Excel</option>
                                         </select>
@@ -786,12 +1096,39 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                                             <?php endif; ?>
                                         </div>
                                         <!-- Upload Zone -->
-                                        <div id="auth-upload-zone" class="auth-upload-zone">
-                                            <div class="settings-group-title" style="margin-bottom:12px"><i data-lucide="upload-cloud"></i> Tải lên file xác thực mới</div>
+                                        <div id="auth-upload-zone" class="auth-upload-zone" role="region" aria-label="Tải lên file xác thực">
+                                            <div class="auth-upload-drop-hint">
+                                                <i data-lucide="upload-cloud"></i>
+                                                <span>Kéo thả file <strong>.xlsx</strong> vào đây hoặc chọn từ máy</span>
+                                            </div>
                                             <div class="auth-upload-row">
                                                 <label class="auth-file-input-label" for="auth-file-input"><i data-lucide="file-plus"></i> <span id="auth-file-label-text">Chọn file .xlsx</span></label>
                                                 <input type="file" id="auth-file-input" accept=".xlsx" class="auth-file-input-hidden" onchange="onAuthFileSelected(this)" aria-label="Chọn file xác thực XLSX">
                                                 <button type="button" id="auth-upload-btn" class="btn btn-primary" onclick="uploadAuthFile()" disabled aria-busy="false"><i data-lucide="upload"></i> <span>Tải lên</span></button>
+                                            </div>
+                                            <div id="auth-upload-progress-container" class="upload-progress-panel" hidden aria-live="polite">
+                                                <div class="upload-progress-header">
+                                                    <div class="upload-progress-file-icon"><i data-lucide="file-spreadsheet"></i></div>
+                                                    <div class="upload-progress-file-details">
+                                                        <span id="auth-upload-file-name" class="upload-progress-file-name"></span>
+                                                        <span id="auth-upload-file-size" class="upload-progress-file-size"></span>
+                                                    </div>
+                                                    <span id="auth-upload-progress-text" class="upload-progress-percent-badge">0%</span>
+                                                </div>
+                                                <div class="upload-progress-bar-wrapper">
+                                                    <div id="auth-upload-progress-bar" class="upload-progress-bar"></div>
+                                                </div>
+                                                <div class="upload-progress-footer">
+                                                    <span id="auth-upload-progress-status">Đang chuẩn bị tải lên...</span>
+                                                    <span id="auth-upload-speed" class="upload-progress-speed"></span>
+                                                </div>
+                                                <div class="upload-stage-list upload-stage-list--compact" id="auth-upload-stages">
+                                                    <div class="upload-stage upload-stage--active" data-stage="upload"><span class="upload-stage-dot"></span>Tải lên</div>
+                                                    <div class="upload-stage-line"></div>
+                                                    <div class="upload-stage" data-stage="process"><span class="upload-stage-dot"></span>Xử lý file</div>
+                                                    <div class="upload-stage-line"></div>
+                                                    <div class="upload-stage" data-stage="done"><span class="upload-stage-dot"></span>Hoàn tất</div>
+                                                </div>
                                             </div>
                                             <p class="auth-upload-hint">Chỉ nhận file <strong>.xlsx</strong>. Phải có cột <strong>MÃ NV</strong> và <strong>MẬT KHẨU</strong>. Tối đa 10 MB.</p>
                                         </div>
@@ -1159,6 +1496,32 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                             </div>
                         </div>
                         <div class="admin-card">
+                            <div class="admin-card-header"><h2 class="admin-card-title"><i data-lucide="shield-alert"></i> Khóa mã hóa tệp tin (Encryption Key)</h2></div>
+                            <div class="admin-card-body">
+                                <div class="field-group">
+                                    <label class="field-label">Khóa mã hóa hiện tại</label>
+                                    <div class="password-input-wrap">
+                                        <?php 
+                                            $currentEnvKey = \App\Config::getEnvValue('APP_FILE_ENCRYPTION_KEY', ''); 
+                                        ?>
+                                        <input type="password" id="app-file-encryption-key-input" name="app_file_encryption_key" class="field-input mono" placeholder="Để trống nếu không dùng mã hóa" value="<?= htmlspecialchars($currentEnvKey) ?>">
+                                        <button type="button" class="password-toggle-btn" onclick="toggleFieldVisibility('app-file-encryption-key-input', this)" aria-label="Hiện/ẩn khóa">
+                                            <i data-lucide="eye"></i>
+                                        </button>
+                                    </div>
+                                    <div class="field-help-text" style="margin-top: 8px;">
+                                        Khóa dùng để mã hóa bảo vệ các file Excel tải lên. 
+                                        <strong>Hãy sao lưu khóa này cẩn thận!</strong> Nếu mất khóa, bạn sẽ không thể mở các file đã mã hóa trước đó.
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" style="width: auto; min-height: auto;" onclick="generateEncryptionKey()"><i data-lucide="refresh-cw"></i> Tạo khóa ngẫu nhiên</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" style="width: auto; min-height: auto;" onclick="copyEncryptionKey()"><i data-lucide="copy"></i> Sao chép khóa</button>
+                                    <button type="button" class="btn btn-danger btn-sm" style="width: auto; min-height: auto; background-color: #dc2626; color: white; border-color: #dc2626;" onclick="confirmResetEncryption()"><i data-lucide="trash-2"></i> Khôi phục khóa & Xóa file cũ</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="admin-card">
                             <div class="admin-card-header"><h2 class="admin-card-title"><i data-lucide="share-2"></i> Chia sẻ kết quả phiếu lương</h2></div>
                             <div class="admin-card-body">
                                 <?php $payrollShareEnabled = !array_key_exists('payroll_share_enabled', $config) || $config['payroll_share_enabled'] !== false; ?>
@@ -1197,6 +1560,38 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                         </div>
                     </div>
 
+                    <!-- Tab: ENV -->
+                    <div class="tab-pane" id="tab-env">
+                        <div class="admin-card">
+                            <div class="admin-card-header"><h2 class="admin-card-title"><i data-lucide="settings-2"></i> Cấu hình Môi trường (.env)</h2></div>
+                            <div class="admin-card-body">
+                                <p class="text-muted" style="margin-bottom: 20px;">Tệp cấu hình <code>.env</code> lưu trữ các biến môi trường nhạy cảm như khóa mã hóa tệp tin và các cài đặt bảo mật quan trọng.</p>
+
+                                <div class="settings-group" style="background: var(--bg-surface); border: 1px solid var(--border); padding: 16px; border-radius: var(--radius); margin-bottom: 20px;">
+                                    <div class="settings-group-title" style="font-weight: 600; font-size: 1.1rem; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;"><i data-lucide="download" class="text-muted"></i> Sao lưu tệp cấu hình</div>
+                                    <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 12px;">Tải xuống bản sao của tệp <code>.env</code> hiện tại trên máy chủ để sao lưu dự phòng hoặc sửa đổi thủ công.</p>
+                                    <a href="admin.php?action=download_env&amp;csrf_token=<?= urlencode($csrfToken) ?>" class="btn btn-outline-secondary btn-sm" style="width: auto; min-height: auto;"><i data-lucide="download"></i> Tải xuống tệp .env</a>
+                                </div>
+
+                                <div class="settings-group" style="background: var(--bg-surface); border: 1px solid var(--border); padding: 16px; border-radius: var(--radius); margin-bottom: 20px;">
+                                    <div class="settings-group-title" style="font-weight: 600; font-size: 1.1rem; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;"><i data-lucide="upload" class="text-muted"></i> Tải lên / Khôi phục tệp cấu hình</div>
+                                    <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 12px;">Ghi đè tệp <code>.env</code> hiện tại bằng cách tải lên một tệp cấu hình mới. Hệ thống sẽ tự động kiểm tra cú pháp dòng cấu hình để tránh lỗi ứng dụng.</p>
+                                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                                        <input type="file" id="env-file-input" accept=".env,text/plain" style="padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-input); color: var(--text-main);">
+                                        <button type="button" class="btn btn-primary btn-sm" style="width: auto; min-height: auto;" onclick="uploadEnvFile()"><i data-lucide="upload"></i> Tải lên và áp dụng</button>
+                                    </div>
+                                </div>
+
+                                <div class="settings-group" style="background: var(--bg-surface); border: 1px solid var(--border); padding: 16px; border-radius: var(--radius); border-left: 4px solid var(--danger);">
+                                    <div class="settings-group-title" style="font-weight: 600; font-size: 1.1rem; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; color: var(--danger);"><i data-lucide="alert-triangle"></i> Khởi tạo lại tệp .env mới</div>
+                                    <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 12px;">Tạo mới một tệp <code>.env</code> hoàn toàn mới với một khóa mã hóa ngẫu nhiên (<code>APP_FILE_ENCRYPTION_KEY</code>).</p>
+                                    <div class="msg msg-error" style="margin-bottom: 12px;"><i data-lucide="alert-circle"></i> <strong>CẢNH BÁO NGUY HIỂM:</strong> Khi tạo lại tệp cấu hình mới, toàn bộ khóa mã hóa cũ sẽ bị thay thế. Các file Excel bảng lương hoặc file xác thực cũ đã được tải lên trước đó sẽ <strong>không thể giải mã và tra cứu được nữa</strong>.</div>
+                                    <button type="button" class="btn btn-danger btn-sm" style="width: auto; min-height: auto; background-color: #dc2626; color: white; border-color: #dc2626;" onclick="recreateNewEnvFile()"><i data-lucide="refresh-cw"></i> Tạo lại file .env mới</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </form>
             </div>
 
@@ -1211,6 +1606,223 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
 <script>
 window.HR_CSRF_TOKEN = <?= json_encode($csrfToken) ?>;
 window.HR_LOCAL_FILES_OPTIONS_HTML = <?= json_encode($spreadsheetUploadOptionsHtml) ?>;
+
+function toggleFieldVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    const icon = btn.querySelector('i');
+    if (icon) icon.setAttribute('data-lucide', isPassword ? 'eye-off' : 'eye');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function generateEncryptionKey() {
+    if (!confirm('Tạo một khóa mã hóa ngẫu nhiên mới? Bạn sẽ cần nhấn "Lưu tất cả cấu hình" để áp dụng khóa này.')) return;
+    const array = new Uint8Array(32);
+    window.crypto.getRandomValues(array);
+    let binary = '';
+    const len = array.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(array[i]);
+    }
+    const base64 = btoa(binary);
+    const input = document.getElementById('app-file-encryption-key-input');
+    if (input) {
+        input.value = 'base64:' + base64;
+        input.type = 'text';
+        const toggleBtn = input.nextElementSibling;
+        const icon = toggleBtn ? toggleBtn.querySelector('i') : null;
+        if (icon) icon.setAttribute('data-lucide', 'eye-off');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+}
+
+function copyEncryptionKey() {
+    const input = document.getElementById('app-file-encryption-key-input');
+    if (!input || !input.value) {
+        alert('Không có khóa để sao chép!');
+        return;
+    }
+    navigator.clipboard.writeText(input.value).then(() => {
+        alert('Đã sao chép khóa mã hóa vào bộ nhớ tạm! Hãy lưu trữ khóa này cẩn thận ở nơi an toàn.');
+    }).catch(() => {
+        alert('Sao chép thất bại. Vui lòng chọn và sao chép thủ công.');
+    });
+}
+
+function confirmResetEncryption() {
+    const keyInput = document.getElementById('app-file-encryption-key-input');
+    const newKey = keyInput ? keyInput.value.trim() : '';
+    
+    if (newKey === '') {
+        alert('Vui lòng nhập hoặc tạo khóa mã hóa mới trước khi thực hiện khôi phục!');
+        return;
+    }
+    
+    if (!confirm('CẢNH BÁO NGUY HIỂM:\nHành động này sẽ XÓA VĨNH VIỄN toàn bộ tệp tin Excel bảng lương & file xác thực cũ trên máy chủ và áp dụng khóa mã hóa mới.\nBạn chỉ nên làm điều này khi ĐÃ MẤT khóa cũ và chấp nhận tải lên lại mọi thứ.\n\nBạn có chắc chắn muốn tiếp tục?')) {
+        return;
+    }
+    
+    if (!confirm('XÁC NHẬN LẦN CUỐI:\nTất cả dữ liệu cũ sẽ bị xóa sạch. Bạn sẽ phải tải lên lại các file Excel sau khi hoàn tất. Xác nhận thực hiện?')) {
+        return;
+    }
+    
+    const form = document.getElementById('admin-form');
+    const actionInput = form ? form.querySelector('input[name="action"]') : null;
+    if (form && actionInput) {
+        actionInput.value = 'reset_lost_encryption_key';
+        form.submit();
+    }
+}
+
+function uploadEnvFile() {
+    const fileInput = document.getElementById('env-file-input');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        alert('Vui lòng chọn tệp .env hoặc tệp văn bản cấu hình trước!');
+        return;
+    }
+    const file = fileInput.files[0];
+    
+    if (!confirm(`Bạn có chắc chắn muốn tải lên tệp "${file.name}" để ghi đè cấu hình .env hiện tại? Thao tác này sẽ thay đổi các biến môi trường hệ thống.`)) {
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('ajax_action', 'upload_env');
+    formData.append('csrf_token', window.HR_CSRF_TOKEN);
+    formData.append('env_file', file);
+    
+    fetch('admin.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.ok) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('Lỗi: ' + data.message);
+        }
+    })
+    .catch(err => {
+        alert('Đã xảy ra lỗi khi kết nối máy chủ.');
+        console.error(err);
+    });
+}
+
+function recreateNewEnvFile() {
+    if (!confirm('CẢNH BÁO: Thao tác này sẽ XÓA khóa mã hóa tệp tin hiện tại và khởi tạo lại tệp .env mới.\nMọi tệp tin Excel bảng lương cũ sẽ không thể giải mã được nữa.\n\nBạn có chắc chắn muốn tiếp tục?')) {
+        return;
+    }
+    
+    if (!confirm('XÁC NHẬN LẦN CUỐI: Bạn thực sự muốn tạo lại tệp cấu hình mới? Hãy chắc chắn đã sao lưu dữ liệu cần thiết.')) {
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('ajax_action', 'recreate_env');
+    formData.append('csrf_token', window.HR_CSRF_TOKEN);
+    
+    fetch('admin.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.ok) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('Lỗi: ' + data.message);
+        }
+    })
+    .catch(err => {
+        alert('Đã xảy ra lỗi khi kết nối máy chủ.');
+        console.error(err);
+    });
+}
+
+function deletePeriodExcelFile(button, periodIdx, filename) {
+    if (!confirm(`Xác nhận xóa tệp dữ liệu "${filename}" và gỡ liên kết khỏi kỳ lương này?\nHành động này sẽ xóa file khỏi máy chủ nếu không còn kỳ lương nào khác sử dụng.`)) {
+        return;
+    }
+    
+    button.disabled = true;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i data-lucide="loader-2" class="spin"></i> Đang xóa...';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    
+    const formData = new FormData();
+    formData.append('ajax_action', 'delete_period_excel');
+    formData.append('period_index', periodIdx);
+    formData.append('filename', filename);
+    formData.append('csrf_token', window.HR_CSRF_TOKEN);
+    
+    fetch('admin.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.ok) {
+            alert(data.message);
+            // Cập nhật giao diện mà không cần reload trang
+            const container = button.closest('.field-file-status');
+            if (container) {
+                // Đổi thành empty status
+                container.className = 'field-file-status empty';
+                container.style.display = '';
+                container.style.justifyContent = '';
+                container.style.gap = '';
+                container.innerHTML = '<i data-lucide="file-warning"></i> <span>Chưa có tệp dữ liệu</span>';
+            }
+            // Reset các select box liên quan trong thẻ kỳ lương này
+            const row = button.closest('.period-row');
+            if (row) {
+                const localSelect = row.querySelector('.period-local-file-select');
+                if (localSelect) {
+                    localSelect.value = '';
+                }
+                const sheetSelect = row.querySelector('.period-sheet-select');
+                if (sheetSelect) {
+                    sheetSelect.innerHTML = '<option value="0">Sheet #0</option>';
+                    sheetSelect.dataset.selectedIndex = '0';
+                }
+                const sheetNameInput = row.querySelector('.period-sheet-name-input');
+                if (sheetNameInput) {
+                    sheetNameInput.value = '';
+                }
+                
+                // Cập nhật lại compact tags trên tiêu đề thẻ
+                const fileTag = row.querySelector('.period-file-tag');
+                if (fileTag) {
+                    fileTag.style.display = 'none';
+                }
+                const sheetTag = row.querySelector('.period-sheet-tag');
+                if (sheetTag) {
+                    sheetTag.style.display = 'none';
+                }
+            }
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        } else {
+            alert('Lỗi: ' + data.message);
+            button.disabled = false;
+            button.innerHTML = originalText;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+    })
+    .catch(err => {
+        alert('Đã xảy ra lỗi khi kết nối máy chủ.');
+        console.error(err);
+        button.disabled = false;
+        button.innerHTML = originalText;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    });
+}
+
+
 </script>
 <script src="assets/admin/admin.js?v=<?= time() ?>"></script>
 </body>

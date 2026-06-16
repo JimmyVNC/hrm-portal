@@ -147,7 +147,9 @@ function syncPeriodEnabled(input) {
 }
 
 function getPeriodRowHTML() {
+    const rowId = 'new_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
     return `<div class="period-row">
+        <input type="hidden" name="period_ids[]" value="${rowId}">
         <div class="period-header" onclick="togglePeriodCard(this)">
             <div class="period-meta">
                 <i data-lucide="calendar" class="text-muted"></i>
@@ -220,7 +222,7 @@ function getPeriodRowHTML() {
                         <select name="period_local_files[]" class="field-input period-local-file-select" onchange="inspectPeriodLocalSheets(this)">
                             <option value="">Chọn file đã tải lên</option>
                         </select>
-                        <input type="file" name="period_files[]" class="field-input period-file-input" accept=".csv, .xlsx" onchange="inspectPeriodLocalSheets(this)">
+                        <input type="file" name="period_file_${rowId}" class="field-input period-file-input" accept=".csv, .xlsx" onchange="inspectPeriodLocalSheets(this)">
                     </div>
                     <div class="field-group">
                         <label class="field-label">Sheet dữ liệu</label>
@@ -305,7 +307,7 @@ function syncPeriodSheetMeta(selectEl) {
     }
 }
 
-function inspectPeriodLocalSheets(triggerEl) {
+function inspectPeriodLocalSheets(triggerEl, isAutoLoad = false) {
     const row = triggerEl.closest('.period-row');
     if (!row) return;
 
@@ -336,7 +338,15 @@ function inspectPeriodLocalSheets(triggerEl) {
         .then(res => res.json())
         .then(data => {
             if (!data.ok) {
-                alert('Không đọc được danh sách sheet: ' + data.message);
+                if (!isAutoLoad) {
+                    alert('Không đọc được danh sách sheet: ' + data.message);
+                } else {
+                    console.warn('Auto-load sheet failed:', data.message);
+                    const hint = row.querySelector('.period-sheet-hint');
+                    if (hint) {
+                        hint.innerHTML = `<span style="color:var(--danger)">Lỗi: ${data.message}</span>`;
+                    }
+                }
                 populateSheetSelect(sheetSelect, [{ index: selectedIndex, name: `Sheet #${selectedIndex}` }], selectedIndex);
                 return;
             }
@@ -366,7 +376,7 @@ function addPeriod() {
             selectEl.innerHTML = window.HR_LOCAL_FILES_OPTIONS_HTML;
         }
     }
-    inspectPeriodLocalSheets(newRow.querySelector('.period-local-file-select'));
+    inspectPeriodLocalSheets(newRow.querySelector('.period-local-file-select'), true);
     
     if (typeof lucide !== 'undefined') lucide.createIcons();
     newRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -383,7 +393,7 @@ function toggleSourceType(selectEl) {
     }
     if (isLocal) {
         const fileSelect = row.querySelector('.period-local-file-select');
-        if (fileSelect) inspectPeriodLocalSheets(fileSelect);
+        if (fileSelect) inspectPeriodLocalSheets(fileSelect, true);
     }
 }
 
@@ -412,9 +422,9 @@ function parseSheetLink(input, type) {
 
 // ===== Tab System =====
 function switchTab(tabId) {
-    document.querySelectorAll('.admin-menu-item, .admin-mobile-tab').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.admin-menu-item').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
-    const triggers = document.querySelectorAll(`.admin-menu-item[data-target="${tabId}"], .admin-mobile-tab[data-target="${tabId}"]`);
+    const triggers = document.querySelectorAll(`.admin-menu-item[data-target="${tabId}"]`);
     const pane = document.getElementById(tabId);
     if (triggers.length > 0 && pane) {
         triggers.forEach((btn) => btn.classList.add('active'));
@@ -428,10 +438,10 @@ function switchTab(tabId) {
         }
         if (window.innerWidth <= 991) {
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            const activeMobileTab = document.querySelector(`.admin-mobile-tab[data-target="${tabId}"]`);
-            if (activeMobileTab && typeof activeMobileTab.scrollIntoView === 'function') {
-                activeMobileTab.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-            }
+            const sidebar = document.querySelector('.admin-sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            if (sidebar) sidebar.classList.remove('open');
+            if (overlay) overlay.classList.remove('visible');
         }
         if (typeof lucide !== 'undefined') lucide.createIcons();
     }
@@ -495,6 +505,41 @@ document.addEventListener('DOMContentLoaded', () => {
         logoInput.addEventListener('input', updateP);
     }
 
+    // Mobile Sidebar Drawer setup
+    const sidebarToggleBtn = document.getElementById('admin-sidebar-toggle-btn');
+    const sidebarCloseBtn = document.getElementById('sidebar-close-btn');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+    const sidebar = document.querySelector('.admin-sidebar');
+
+    if (sidebarToggleBtn && sidebar && sidebarOverlay) {
+        sidebarToggleBtn.addEventListener('click', () => {
+            sidebar.classList.add('open');
+            sidebarOverlay.classList.add('visible');
+        });
+    }
+
+    const closeSidebar = () => {
+        if (sidebar) sidebar.classList.remove('open');
+        if (sidebarOverlay) sidebarOverlay.classList.remove('visible');
+    };
+
+    if (sidebarCloseBtn) sidebarCloseBtn.addEventListener('click', closeSidebar);
+    if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+    // Segmented control setup for auth source type selector
+    const authSegments = document.querySelectorAll('#auth-source-type-segments .segment-btn');
+    const authSelect = document.getElementById('auth-source-type-select');
+    if (authSegments.length && authSelect) {
+        authSegments.forEach(btn => {
+            btn.addEventListener('click', () => {
+                authSegments.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                authSelect.value = btn.dataset.value;
+                authSelect.dispatchEvent(new Event('change'));
+            });
+        });
+    }
+
     const savedTab = sessionStorage.getItem('hr_admin_active_tab');
     if (savedTab) switchTab(savedTab);
 
@@ -507,7 +552,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.querySelectorAll('.period-row').forEach(row => {
         const localSelect = row.querySelector('.period-local-file-select');
-        if (localSelect) inspectPeriodLocalSheets(localSelect);
+        if (localSelect) inspectPeriodLocalSheets(localSelect, true);
     });
 });
 
@@ -540,6 +585,212 @@ function deleteUploadedFile(filename, btn) {
 }
 
 // ============================================================
+// UPLOAD PROGRESS UI — shared helpers
+// ============================================================
+
+function formatUploadBytes(bytes) {
+    if (!bytes || bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    let size = bytes;
+    while (size >= 1024 && i < units.length - 1) {
+        size /= 1024;
+        i++;
+    }
+    return (i === 0 ? size : size.toFixed(1)) + ' ' + units[i];
+}
+
+function setUploadStages(container, stage) {
+    if (!container) return;
+    const order = ['upload', 'process', 'done'];
+    const activeIdx = order.indexOf(stage);
+    const stages = container.querySelectorAll('.upload-stage');
+    const lines = container.querySelectorAll('.upload-stage-line');
+    stages.forEach((el, idx) => {
+        el.classList.remove('upload-stage--active', 'upload-stage--done');
+        if (idx < activeIdx) el.classList.add('upload-stage--done');
+        else if (idx === activeIdx) el.classList.add('upload-stage--active');
+    });
+    lines.forEach((el, idx) => {
+        el.classList.toggle('is-done', idx < activeIdx);
+    });
+}
+
+function updateUploadProgressUI(refs, state) {
+    const { status, speed, stage, title } = state;
+    const percent = Math.max(0, Math.min(100, Math.round(Number(state.percent) || 0)));
+    if (refs.bar) {
+        refs.bar.style.width = percent + '%';
+        refs.bar.classList.toggle('is-animating', stage === 'process' && percent >= 100);
+    }
+    if (refs.percent) refs.percent.textContent = percent + '%';
+    if (refs.status && status) refs.status.textContent = status;
+    if (refs.speed) refs.speed.textContent = speed ? formatUploadBytes(speed) + '/s' : '';
+    if (refs.title && title) refs.title.textContent = title;
+    if (refs.stages && stage) setUploadStages(refs.stages, stage);
+}
+
+function startSmoothSubmitProgress(overlay, options = {}) {
+    const hasFiles = !!options.hasFiles;
+    const startedAt = Date.now();
+    let currentPercent = hasFiles ? 10 : 24;
+    const checkpoints = hasFiles
+        ? [
+            { after: 250, percent: 22, stage: 'upload', status: 'Đang nén dữ liệu biểu mẫu...' },
+            { after: 900, percent: 48, stage: 'upload', status: 'Đang tải tệp lên máy chủ...' },
+            { after: 1800, percent: 72, stage: 'process', status: 'Máy chủ đang kiểm tra và lưu cấu hình...' },
+            { after: 3200, percent: 88, stage: 'process', status: 'Đang hoàn tất ghi dữ liệu...' },
+        ]
+        : [
+            { after: 180, percent: 38, stage: 'process', status: 'Đang gửi cấu hình lên máy chủ...' },
+            { after: 650, percent: 62, stage: 'process', status: 'Đang kiểm tra dữ liệu cấu hình...' },
+            { after: 1400, percent: 82, stage: 'process', status: 'Đang ghi cấu hình...' },
+            { after: 2600, percent: 92, stage: 'process', status: 'Sắp hoàn tất...' },
+        ];
+
+    overlay.update({
+        percent: currentPercent,
+        stage: hasFiles ? 'upload' : 'process',
+        status: hasFiles ? 'Đang chuẩn bị tải tệp...' : 'Đang chuẩn bị lưu cấu hình...',
+    });
+
+    const timers = checkpoints.map((checkpoint) => window.setTimeout(() => {
+        currentPercent = Math.max(currentPercent, checkpoint.percent);
+        overlay.update(checkpoint);
+    }, checkpoint.after));
+
+    const driftTimer = window.setInterval(() => {
+        const elapsed = Date.now() - startedAt;
+        const ceiling = elapsed > 6500 ? 97 : elapsed > 3800 ? 95 : 90;
+        if (currentPercent < ceiling) {
+            currentPercent += currentPercent < 70 ? 2 : 1;
+            overlay.update({
+                percent: currentPercent,
+                stage: currentPercent > 64 ? 'process' : (hasFiles ? 'upload' : 'process'),
+            });
+        }
+    }, 420);
+
+    return () => {
+        timers.forEach(window.clearTimeout);
+        window.clearInterval(driftTimer);
+    };
+}
+
+function xhrUploadWithProgress(url, formData, onProgress) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const startTime = Date.now();
+
+        xhr.upload.onprogress = function(event) {
+            if (!event.lengthComputable) return;
+            const uploadComplete = event.loaded >= event.total;
+            const percent = uploadComplete ? 99 : Math.round((event.loaded / event.total) * 100);
+            const elapsed = (Date.now() - startTime) / 1000;
+            const speed = elapsed > 0 ? event.loaded / elapsed : 0;
+            const stage = uploadComplete ? 'process' : 'upload';
+            onProgress({
+                percent,
+                loaded: event.loaded,
+                total: event.total,
+                speed,
+                stage,
+                status: !uploadComplete
+                    ? 'Đang tải lên ' + formatUploadBytes(event.loaded) + ' / ' + formatUploadBytes(event.total)
+                    : 'Dữ liệu đã tải lên, đang xử lý trên máy chủ...',
+            });
+        };
+
+        xhr.onload = function() {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                onProgress({
+                    percent: 100,
+                    stage: 'done',
+                    status: 'Hoàn tất!',
+                    speed: 0,
+                });
+                try {
+                    resolve(JSON.parse(xhr.responseText));
+                } catch {
+                    resolve(xhr.responseText);
+                }
+            } else {
+                reject(new Error('Mã lỗi phản hồi: ' + xhr.status));
+            }
+        };
+
+        xhr.onerror = function() {
+            reject(new Error('Lỗi kết nối máy chủ.'));
+        };
+
+        xhr.open('POST', url, true);
+        xhr.send(formData);
+    });
+}
+
+function createUploadOverlay(options) {
+    const overlay = document.createElement('div');
+    overlay.className = 'upload-overlay';
+    overlay.id = options.id || 'upload-overlay';
+
+    const safeTitle = (options.title || 'Đang tải lên...').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeFileName = options.fileName
+        ? options.fileName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        : '';
+
+    const fileLine = safeFileName
+        ? `<p class="upload-modal-file"><i data-lucide="file-spreadsheet"></i> <span>${safeFileName}</span>${options.fileSize ? `<span class="upload-modal-file-size">(${formatUploadBytes(options.fileSize)})</span>` : ''}</p>`
+        : '';
+
+    overlay.innerHTML = `
+        <div class="upload-modal">
+            <div class="upload-modal-icon">
+                <div class="upload-modal-icon-ring"></div>
+                <i data-lucide="cloud-upload"></i>
+            </div>
+            <h3 class="upload-modal-title">${safeTitle}</h3>
+            ${fileLine}
+            <div class="upload-progress-bar-wrapper upload-progress-bar-wrapper--lg">
+                <div class="upload-progress-bar"></div>
+            </div>
+            <div class="upload-progress-info upload-progress-info--modal">
+                <span class="upload-progress-percent">0%</span>
+                <span class="upload-progress-status">Đang chuẩn bị...</span>
+            </div>
+            <div class="upload-stage-list">
+                <div class="upload-stage upload-stage--active" data-stage="upload"><span class="upload-stage-dot"></span>Tải lên</div>
+                <div class="upload-stage-line"></div>
+                <div class="upload-stage" data-stage="process"><span class="upload-stage-dot"></span>Xử lý</div>
+                <div class="upload-stage-line"></div>
+                <div class="upload-stage" data-stage="done"><span class="upload-stage-dot"></span>Hoàn tất</div>
+            </div>
+            <p class="upload-modal-speed"></p>
+        </div>`;
+
+    document.body.appendChild(overlay);
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+
+    const modal = overlay.querySelector('.upload-modal');
+    return {
+        el: overlay,
+        refs: {
+            bar: modal.querySelector('.upload-progress-bar'),
+            percent: modal.querySelector('.upload-progress-percent'),
+            status: modal.querySelector('.upload-progress-status'),
+            speed: modal.querySelector('.upload-modal-speed'),
+            title: modal.querySelector('.upload-modal-title'),
+            stages: modal.querySelector('.upload-stage-list'),
+        },
+        update(state) {
+            updateUploadProgressUI(this.refs, state);
+        },
+        remove() {
+            overlay.remove();
+        },
+    };
+}
+
+// ============================================================
 // AUTH FILE MANAGER — Upload / Preview / Editor / Save
 // ============================================================
 
@@ -558,27 +809,101 @@ function onAuthFileSelected(input) {
     }
 }
 
+function initAuthUploadZoneDragDrop() {
+    const zone = document.getElementById('auth-upload-zone');
+    const input = document.getElementById('auth-file-input');
+    if (!zone || !input) return;
+
+    zone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        zone.classList.add('is-dragover');
+    });
+    zone.addEventListener('dragleave', (e) => {
+        if (!zone.contains(e.relatedTarget)) zone.classList.remove('is-dragover');
+    });
+    zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('is-dragover');
+        const file = e.dataTransfer?.files?.[0];
+        if (!file) return;
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext !== 'xlsx') {
+            showAuthToast('❌ Chỉ chấp nhận file .xlsx', 'error');
+            return;
+        }
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        onAuthFileSelected(input);
+    });
+}
+
+function showAuthUploadProgress(file) {
+    const zone = document.getElementById('auth-upload-zone');
+    const container = document.getElementById('auth-upload-progress-container');
+    const fileNameEl = document.getElementById('auth-upload-file-name');
+    const fileSizeEl = document.getElementById('auth-upload-file-size');
+
+    if (zone) zone.classList.add('is-uploading');
+    if (container) container.hidden = false;
+    if (fileNameEl) fileNameEl.textContent = file.name;
+    if (fileSizeEl) fileSizeEl.textContent = formatUploadBytes(file.size);
+
+    const refs = {
+        bar: document.getElementById('auth-upload-progress-bar'),
+        percent: document.getElementById('auth-upload-progress-text'),
+        status: document.getElementById('auth-upload-progress-status'),
+        speed: document.getElementById('auth-upload-speed'),
+        stages: document.getElementById('auth-upload-stages'),
+    };
+
+    updateUploadProgressUI(refs, {
+        percent: 0,
+        status: 'Đang chuẩn bị tải lên...',
+        speed: 0,
+        stage: 'upload',
+    });
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+
+    return {
+        refs,
+        hide() {
+            if (zone) zone.classList.remove('is-uploading');
+            if (container) container.hidden = true;
+        },
+        update(state) {
+            updateUploadProgressUI(refs, state);
+        },
+    };
+}
+
 function uploadAuthFile() {
     const input   = document.getElementById('auth-file-input');
     const btn     = document.getElementById('auth-upload-btn');
     const btnSpan = btn.querySelector('span');
     if (!input || !input.files[0]) return;
 
+    const file = input.files[0];
     const fd = new FormData();
     fd.append('ajax_action', 'upload_auth_file');
-    fd.append('auth_file', input.files[0]);
+    fd.append('auth_file', file);
     if (window.HR_CSRF_TOKEN) fd.append('csrf_token', window.HR_CSRF_TOKEN);
 
     btn.disabled = true;
     btn.setAttribute('aria-busy', 'true');
     if (btnSpan) btnSpan.textContent = 'Đang tải...';
 
-    fetch('admin.php', { method: 'POST', body: fd })
-        .then(r => r.json())
+    const progressUI = showAuthUploadProgress(file);
+
+    xhrUploadWithProgress('admin.php', fd, (state) => {
+        progressUI.update(state);
+    })
         .then(data => {
             btn.disabled = false;
             btn.setAttribute('aria-busy', 'false');
             if (btnSpan) btnSpan.textContent = 'Tải lên';
+            progressUI.hide();
 
             if (data.ok && data.requires_resolution) {
                 openAuthDuplicateModal(data);
@@ -594,11 +919,12 @@ function uploadAuthFile() {
                 showAuthToast('❌ ' + data.message, 'error');
             }
         })
-        .catch(() => {
+        .catch(err => {
             btn.disabled = false;
             btn.setAttribute('aria-busy', 'false');
             if (btnSpan) btnSpan.textContent = 'Tải lên';
-            showAuthToast('❌ Lỗi kết nối máy chủ.', 'error');
+            progressUI.hide();
+            showAuthToast('❌ Tải lên thất bại. ' + err.message, 'error');
         });
 }
 
@@ -1999,4 +2325,67 @@ document.addEventListener('DOMContentLoaded', function () {
         renderQuickLookupEmptyCard();
         updateQuickLookupActionButtons();
     }
+    setupAdminFormSubmit();
+    initAuthUploadZoneDragDrop();
 });
+
+function setupAdminFormSubmit() {
+    const form = document.getElementById('admin-form');
+    if (!form) return;
+
+    form.addEventListener('submit', function(e) {
+        if (form.dataset.submitting === '1') {
+            e.preventDefault();
+            return;
+        }
+
+        const fileInputs = form.querySelectorAll('input[type="file"]');
+        const fileList = [];
+        for (const input of fileInputs) {
+            if (input.files) {
+                for (const f of input.files) {
+                    if (f.size > 0) fileList.push(f);
+                }
+            }
+        }
+        const hasFiles = fileList.length > 0;
+        const totalSize = fileList.reduce((sum, f) => sum + f.size, 0);
+
+        let fileLabel = '';
+        if (fileList.length === 1) {
+            fileLabel = fileList[0].name;
+        } else if (fileList.length > 1) {
+            fileLabel = fileList.length + ' tệp (' + fileList.map(f => f.name).join(', ') + ')';
+        }
+
+        const overlay = createUploadOverlay({
+            id: 'admin-submit-loading-overlay',
+            title: hasFiles ? 'Đang tải lên tệp & lưu cấu hình' : 'Đang lưu cấu hình',
+            fileName: fileLabel,
+            fileSize: totalSize,
+        });
+        const saveBar = document.querySelector('.sticky-save-bar');
+        const saveBarInfo = saveBar?.querySelector('.save-bar-info span');
+        const saveBarIcon = saveBar?.querySelector('.save-bar-info i');
+        const submitButtons = form.querySelectorAll('button[type="submit"], input[type="submit"]');
+        submitButtons.forEach((button) => {
+            const label = button.querySelector('span');
+            button.dataset.originalText = button.textContent.trim();
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            button.classList.add('is-saving');
+            if (label) {
+                label.textContent = hasFiles ? 'Đang tải lên...' : 'Đang lưu...';
+            } else if (button.tagName === 'BUTTON') {
+                button.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span>' + (hasFiles ? 'Đang tải lên...' : 'Đang lưu...');
+            }
+        });
+        if (saveBar) saveBar.classList.add('is-saving');
+        if (saveBarInfo) saveBarInfo.textContent = hasFiles ? 'Đang tải tệp và lưu cấu hình...' : 'Đang lưu cấu hình...';
+        if (saveBarIcon) saveBarIcon.setAttribute('data-lucide', hasFiles ? 'cloud-upload' : 'loader-circle');
+        form.dataset.submitting = '1';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+
+        startSmoothSubmitProgress(overlay, { hasFiles });
+    });
+}

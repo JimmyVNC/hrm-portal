@@ -251,7 +251,7 @@ final class FileCrypto
 
         $contents = self::readFileContents($path);
         if (!is_string($contents)) {
-            throw new \Error('Không thể giải mã file local.');
+            throw new \Error('Không thể giải mã file local. (Sai khóa bảo vệ hoặc khóa bị thay đổi)');
         }
 
         $tmpPath = tempnam(sys_get_temp_dir(), 'hrmdec_');
@@ -376,13 +376,8 @@ final class FileCrypto
         }
     }
 
-    private static function resolveKey(): ?string
+    public static function parseKey(string $raw): ?string
     {
-        $raw = Config::getEnvValue(self::KEY_ENV);
-        if (!is_string($raw)) {
-            return null;
-        }
-
         $raw = trim($raw);
         if ($raw === '') {
             return null;
@@ -390,17 +385,25 @@ final class FileCrypto
 
         if (strpos($raw, 'base64:') === 0) {
             $decoded = base64_decode(substr($raw, 7), true);
-            return is_string($decoded) && strlen($decoded) === 32 ? $decoded : null;
+            if (is_string($decoded) && strlen($decoded) === 32) {
+                return $decoded;
+            }
+            return hash('sha256', is_string($decoded) ? $decoded : $raw, true);
         }
 
         if (strpos($raw, 'hex:') === 0) {
             $decoded = @hex2bin(substr($raw, 4));
-            return is_string($decoded) && strlen($decoded) === 32 ? $decoded : null;
+            if (is_string($decoded) && strlen($decoded) === 32) {
+                return $decoded;
+            }
+            return hash('sha256', is_string($decoded) ? $decoded : $raw, true);
         }
 
         if (ctype_xdigit($raw) && strlen($raw) === 64) {
             $decoded = @hex2bin($raw);
-            return is_string($decoded) && strlen($decoded) === 32 ? $decoded : null;
+            if (is_string($decoded) && strlen($decoded) === 32) {
+                return $decoded;
+            }
         }
 
         $decoded = base64_decode($raw, true);
@@ -408,6 +411,104 @@ final class FileCrypto
             return $decoded;
         }
 
-        return strlen($raw) === 32 ? $raw : null;
+        if (strlen($raw) === 32) {
+            return $raw;
+        }
+
+        return hash('sha256', $raw, true);
+    }
+
+    public static function rotateKey(string $oldKeyStr, string $newKeyStr): array
+    {
+        $oldKey = self::parseKey($oldKeyStr);
+        $newKey = self::parseKey($newKeyStr);
+
+        $uploadsDir = Config::uploadsDir();
+        $backupsDir = $uploadsDir . DIRECTORY_SEPARATOR . 'backups';
+        
+        $patterns = [
+            $uploadsDir . DIRECTORY_SEPARATOR . 'auth_*.xlsx',
+            $uploadsDir . DIRECTORY_SEPARATOR . 'up_*.xlsx',
+            $uploadsDir . DIRECTORY_SEPARATOR . 'up_*.csv',
+            $backupsDir . DIRECTORY_SEPARATOR . 'auth_backup_*.xlsx',
+        ];
+        
+        $filesToMigrate = [];
+        foreach ($patterns as $pattern) {
+            foreach (glob($pattern) ?: [] as $path) {
+                if (is_file($path)) {
+                    $filesToMigrate[] = $path;
+                }
+            }
+        }
+        
+        // Step 1: Read and decrypt/read all files into memory
+        $decryptedData = [];
+        foreach ($filesToMigrate as $path) {
+            $isEncrypted = self::isEncryptedBinaryFile($path);
+            if ($isEncrypted) {
+                if ($oldKey === null) {
+                    return [
+                        'success' => false,
+                        'error' => "Tệp tin " . basename($path) . " đã được mã hóa trước đó, nhưng khóa cũ không khả dụng để giải mã."
+                    ];
+                }
+                $contents = self::decryptBinaryPayload(@file_get_contents($path), $oldKey);
+                if ($contents === null) {
+                    return [
+                        'success' => false,
+                        'error' => "Không thể giải mã tệp tin: " . basename($path) . " bằng khóa cũ. Quá trình xoay khóa bị hủy bỏ."
+                    ];
+                }
+                $decryptedData[$path] = $contents;
+            } else {
+                $contents = @file_get_contents($path);
+                if (!is_string($contents)) {
+                    return [
+                        'success' => false,
+                        'error' => "Không thể đọc tệp tin: " . basename($path)
+                    ];
+                }
+                $decryptedData[$path] = $contents;
+            }
+        }
+        
+        // Step 2: Encrypt with new key and write back
+        foreach ($decryptedData as $path => $plaintext) {
+            if ($newKey !== null) {
+                $encrypted = self::encryptBinaryPayload($plaintext, $newKey);
+                if ($encrypted === null) {
+                    return [
+                        'success' => false,
+                        'error' => "Mã hóa thất bại cho tệp tin: " . basename($path) . " bằng khóa mới."
+                    ];
+                }
+                if (!self::atomicWrite($path, $encrypted)) {
+                    return [
+                        'success' => false,
+                        'error' => "Không thể ghi tệp tin đã mã hóa: " . basename($path)
+                    ];
+                }
+            } else {
+                if (!self::atomicWrite($path, $plaintext)) {
+                    return [
+                        'success' => false,
+                        'error' => "Không thể ghi tệp tin giải mã: " . basename($path)
+                    ];
+                }
+            }
+        }
+        
+        return ['success' => true, 'error' => null];
+    }
+
+    private static function resolveKey(): ?string
+    {
+        $raw = Config::getEnvValue(self::KEY_ENV);
+        if (!is_string($raw)) {
+            return null;
+        }
+
+        return self::parseKey($raw);
     }
 }

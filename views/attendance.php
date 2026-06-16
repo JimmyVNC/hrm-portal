@@ -98,7 +98,7 @@ $formatAttendanceDateLabel = static function (string $date) use ($dayNames): arr
             <?php endif; ?>
         </div>
 
-        <?php if (!$attendanceState['enabled'] && !$isAdmin): ?>
+        <?php if (!$attendanceState['enabled'] && !$isAdmin && empty($attendanceState['is_shared_view'])): ?>
             <div class="alert alert-info">
                 <span class="alert-icon">ℹ️</span>
                 <span>Phân hệ chấm công đang tạm tắt.</span>

@@ -49,6 +49,10 @@ class AdminFileManager
      */
     public static function uploadAuthFile(array &$config): array
     {
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(0);
+        @ignore_user_abort(true);
+
         $uploadDir = self::getUploadDir();
         $backupDir = self::getBackupDir();
         self::prunePendingUploads();
@@ -148,7 +152,7 @@ class AdminFileManager
             if ($raw === '' || self::isPasswordHashString($raw)) {
                 continue;
             }
-            $row[$passIdx] = password_hash($raw, PASSWORD_DEFAULT);
+            $row[$passIdx] = password_hash($raw, PASSWORD_BCRYPT, ['cost' => 4]);
             $hashedCount++;
         }
         unset($row);
@@ -413,6 +417,10 @@ class AdminFileManager
      */
     public static function saveAuthData(array &$config, array $payload): array
     {
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(0);
+        @ignore_user_abort(true);
+
         $headers = $payload['headers'] ?? [];
         $rows    = $payload['rows']    ?? [];
 
@@ -456,8 +464,8 @@ class AdminFileManager
 
             if ($passColIdx !== false) {
                 $rawPassword = trim((string) ($row[$passColIdx] ?? ''));
-                if ($rawPassword !== '' && !self::isPasswordHashString($rawPassword)) {
-                    $row[$passColIdx] = password_hash($rawPassword, PASSWORD_DEFAULT);
+                if ($rawPassword !== '') {
+                    $row[$passColIdx] = $rawPassword;
                 }
             }
         }
@@ -1150,19 +1158,20 @@ class AdminFileManager
         if (is_string($currentAbs) && $currentAbs !== '' && is_file($currentAbs)) {
             $currentRead = self::readAuthDataset($currentAbs);
             if (!$currentRead['ok']) {
-                return ['ok' => false, 'message' => 'Không đọc được file xác thực hiện tại để đối chiếu.'];
-            }
-            $current = $currentRead['dataset'];
-            $baseHeaders = $current['headers'];
-            $baseNormalized = $current['normalized_headers'];
+                error_log('[HRM] Warning: Không đọc được file xác thực cũ để đối chiếu. Tiến hành ghi đè. Lỗi: ' . ($currentRead['message'] ?? 'Không rõ'));
+            } else {
+                $current = $currentRead['dataset'];
+                $baseHeaders = $current['headers'];
+                $baseNormalized = $current['normalized_headers'];
 
-            foreach ($current['rows'] as $row) {
-                $key = self::normalizeEmployeeIdKey((string) ($row[$current['emp_idx']] ?? ''));
-                if ($key === '') {
-                    continue;
-                }
-                if (!isset($rowsByKey[$key])) {
-                    $rowsByKey[$key] = self::mapRowToBaseHeaders($row, $current['normalized_headers'], $baseNormalized);
+                foreach ($current['rows'] as $row) {
+                    $key = self::normalizeEmployeeIdKey((string) ($row[$current['emp_idx']] ?? ''));
+                    if ($key === '') {
+                        continue;
+                    }
+                    if (!isset($rowsByKey[$key])) {
+                        $rowsByKey[$key] = self::mapRowToBaseHeaders($row, $current['normalized_headers'], $baseNormalized);
+                    }
                 }
             }
         }
@@ -1180,6 +1189,7 @@ class AdminFileManager
         $newAdded = 0;
         $updated = 0;
         $passwordHashed = 0;
+
         foreach ($incoming['rows'] as $row) {
             $key = self::normalizeEmployeeIdKey((string) ($row[$incoming['emp_idx']] ?? ''));
             if ($key === '') {
@@ -1199,12 +1209,7 @@ class AdminFileManager
                 }
 
                 if ($plainPassword !== '') {
-                    if (self::isPasswordHashString($plainPassword)) {
-                        $existing[$basePassIdx] = $plainPassword;
-                    } else {
-                        $existing[$basePassIdx] = password_hash($plainPassword, PASSWORD_DEFAULT);
-                        $passwordHashed++;
-                    }
+                    $existing[$basePassIdx] = $plainPassword;
                 }
 
                 $rowsByKey[$key] = $existing;
@@ -1215,10 +1220,7 @@ class AdminFileManager
             if ($plainPassword === '') {
                 continue;
             }
-            if (!self::isPasswordHashString($plainPassword)) {
-                $mapped[$basePassIdx] = password_hash($plainPassword, PASSWORD_DEFAULT);
-                $passwordHashed++;
-            }
+            $mapped[$basePassIdx] = $plainPassword;
             $rowsByKey[$key] = $mapped;
             $newAdded++;
         }

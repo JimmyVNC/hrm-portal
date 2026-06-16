@@ -3,7 +3,7 @@
         {
             "label": "BẢNG LƯƠNG THÁNG 05\/2026",
             "source_type": "local",
-            "local_file": "uploads\/up_106f4ed1286495b0.xlsx",
+            "local_file": "uploads\/up_882a63b1d4d0744c.xlsx",
             "sheet_id": "1-5PdYKbTAfptgw_cDbaQsC85yInFrouw2cyba4xLSgQ",
             "gid": "63709101",
             "cols": "Lương CB, PC Lương tính BHXH, Lương khấu trừ BHXH, Lương thực tế, Ngày công, Lương HTCV, Giờ tăng ca, Tiền tăng ca, Thưởng chung, Tổng tiền lương, NLD BHXH BHYT BHTN, Tạm ứng ngày 20 tây, Số nhận chuyển khoản, Tạm ứng mua điện thoại, Tạm ứng mượn riêng, TT tham gia sinh nhật, Tiền quán hàng tháng, Tạm ứng đi Du lịch, Tạm ứng khác, PC công tác, PC nuôi CN, Trừ thuế TNCN, Tổng số tiền phải TT lại, Thực lãnh",
@@ -17,7 +17,7 @@
         {
             "label": "CHI TIẾT THƯỞNG 05\/2026",
             "source_type": "local",
-            "local_file": "uploads\/up_8a1dcba0b9947ebf.xlsx",
+            "local_file": "uploads\/up_2c72e55e568638a3.xlsx",
             "sheet_id": "1-5PdYKbTAfptgw_cDbaQsC85yInFrouw2cyba4xLSgQ",
             "gid": "1889132824",
             "cols": "Lương thực tế, Ngày công, Giờ tăng ca, VT & VS, PC HTCV, PC cơm, PC điện thoại, PC đủ ngày, PC nhà, PC chuyên cần, PC công tác, PC nuôi CN, PC độc hại, PC SL T.Cuộn, PC SL T.Cây, PC ca đêm, Tiền sản lượng, Sản lượng cuộn cây, Thưởng khác, Trừ VT & VS, Kỷ luật, Nghĩ KP, Trừ TN, Thưởng chung",
@@ -33,7 +33,7 @@
     "auth_gid": "1484524032",
     "admin_password": "$2y$10$W25.RhMdHU9QOCqpjCxpG.7XleB0cOPdaYcj5MUT5NxclMSOZ73I.",
     "auth_source_type": "local",
-    "auth_local_file": "uploads\/auth_4f1fc5c8f505a9fe.xlsx",
+    "auth_local_file": "uploads\/auth_c78024a6196c3f9b.xlsx",
     "check_enabled": false,
     "check_api_url": "http:\/\/webapi.thepvinhthanh.com\/mitaco-api.aspx",
     "check_available_from": "",

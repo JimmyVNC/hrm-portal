@@ -56,6 +56,10 @@ class Config {
         'payroll_share_enabled' => true,
         'employee_session_timeout_minutes' => 30,
         'employee_notice' => '',
+        'leave_request_enabled' => false,
+        'leave_verification_mode' => 'any_employee',
+        'leave_link_requires_verifier_id' => false,
+        'col_role' => 'VAI TRÒ',
         // === Giao diện / Thương hiệu ===
         'site_company'  => 'VINH THANH STEEL',
         'site_logo_text'=> 'HR',
@@ -292,6 +296,7 @@ class Config {
             'COL_PASSWORD' => 'col_password',
             'COL_EMP_NAME' => 'col_emp_name',
             'COL_DEPARTMENT' => 'col_department',
+            'COL_ROLE' => 'col_role',
             'STAT_COLS' => 'stat_cols',
             'PAYROLL_SHARE_TTL_HOURS' => 'payroll_share_ttl_hours',
             'EMPLOYEE_NOTICE' => 'employee_notice',
@@ -313,6 +318,11 @@ class Config {
         $shareEnabled = self::getEnvValue('PAYROLL_SHARE_ENABLED');
         if ($shareEnabled !== null) {
             $config['payroll_share_enabled'] = in_array(strtolower((string) $shareEnabled), ['1', 'true', 'on', 'yes'], true);
+        }
+
+        $leaveEnabled = self::getEnvValue('LEAVE_REQUEST_ENABLED');
+        if ($leaveEnabled !== null) {
+            $config['leave_request_enabled'] = in_array(strtolower((string) $leaveEnabled), ['1', 'true', 'on', 'yes'], true);
         }
 
         $config['payroll_share_ttl_hours'] = max(1, min(2, (int) ($config['payroll_share_ttl_hours'] ?? 2)));

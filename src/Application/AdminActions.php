@@ -348,6 +348,15 @@ class AdminActions {
 
         if (empty($_SESSION['hr_admin'])) return ['msg' => 'Unauthorized', 'type' => 'error'];
 
+        if ($action === 'leave_decision') {
+            $decisionResult = LeaveActions::decide((string) ($_POST['leave_id'] ?? ''), (string) ($_POST['decision'] ?? ''), (string) ($_POST['manager_note'] ?? ''));
+            return ['msg' => (string) ($decisionResult['message'] ?? 'Không thể cập nhật đơn nghỉ.'), 'type' => !empty($decisionResult['success']) ? 'success' : 'error'];
+        }
+        if ($action === 'leave_delete') {
+            $deleteResult = LeaveActions::delete((string) ($_POST['leave_id'] ?? ''));
+            return ['msg' => (string) ($deleteResult['message'] ?? 'Không thể xóa đơn nghỉ.'), 'type' => !empty($deleteResult['success']) ? 'success' : 'error'];
+        }
+
         if ($action === 'reset_lost_encryption_key') {
             $newKey = (string) ($_POST['app_file_encryption_key'] ?? '');
             $uploadsDir = Config::uploadsDir();
@@ -405,7 +414,7 @@ class AdminActions {
             foreach (['site_company','site_logo_text','site_hero_title','site_hero_desc','site_footer','employee_notice'] as $key) {
                 if (isset($_POST[$key])) $config[$key] = trim($_POST[$key]);
             }
-            foreach (['col_emp_id','col_password','col_emp_name','col_department','stat_cols'] as $key) {
+            foreach (['col_emp_id','col_password','col_emp_name','col_department','col_role','stat_cols'] as $key) {
                 if (isset($_POST[$key])) $config[$key] = trim($_POST[$key]);
             }
             $config['check_api_url'] = trim((string) ($_POST['check_api_url'] ?? $config['check_api_url'] ?? ''));
@@ -416,6 +425,9 @@ class AdminActions {
             $shareTtlHours = (int) ($_POST['payroll_share_ttl_hours'] ?? ($config['payroll_share_ttl_hours'] ?? 2));
             $config['payroll_share_ttl_hours'] = max(1, min(2, $shareTtlHours));
             $config['payroll_share_enabled'] = self::normalizePeriodEnabled($_POST['payroll_share_enabled'] ?? ($config['payroll_share_enabled'] ?? true));
+            $config['leave_request_enabled'] = self::normalizePeriodEnabled($_POST['leave_request_enabled'] ?? ($config['leave_request_enabled'] ?? false));
+            $config['leave_verification_mode'] = in_array(($_POST['leave_verification_mode'] ?? ''), ['leader', 'any_employee'], true) ? $_POST['leave_verification_mode'] : 'any_employee';
+            $config['leave_link_requires_verifier_id'] = self::normalizePeriodEnabled($_POST['leave_link_requires_verifier_id'] ?? ($config['leave_link_requires_verifier_id'] ?? false));
             $sessionTimeout = (int) ($_POST['employee_session_timeout_minutes'] ?? ($config['employee_session_timeout_minutes'] ?? 30));
             $config['employee_session_timeout_minutes'] = max(5, min(120, $sessionTimeout));
 

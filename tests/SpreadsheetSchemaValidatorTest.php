@@ -81,4 +81,17 @@ final class SpreadsheetSchemaValidatorTest extends TestCase {
         $result = SpreadsheetSchemaValidator::validatePeriodDataset($rows, $config, $period);
         $this->assertTrue($result['ok']);
     }
+
+    public function testValidatePeriodDatasetAllowsFileWithoutEmployeeIdColumn(): void {
+        $rows = [
+            ['Họ tên', 'Thực lãnh'],
+            ['Nguyễn Văn A', '1000000'],
+        ];
+        $config = ['col_emp_id' => 'Mã NV'];
+        $period = ['money_cols' => 'Thực lãnh'];
+
+        $result = SpreadsheetSchemaValidator::validatePeriodDataset($rows, $config, $period);
+
+        $this->assertTrue($result['ok']);
+    }
 }

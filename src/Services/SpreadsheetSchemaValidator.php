@@ -188,14 +188,10 @@ final class SpreadsheetSchemaValidator {
         $searchCol = (string) ($config['col_emp_id'] ?? 'MÃ NV');
         $header = self::findHeader($rows, $searchCol, (int) (($config['header_scan_limit'] ?? 20)));
         if ($header === null) {
-            return ['ok' => false, 'message' => "Không tìm thấy header chứa cột '{$searchCol}'."];
-        }
-
-        // Preserve the legacy behavior: only the employee-id header is mandatory.
-        // Optional display/highlight/money columns may be absent and will be ignored by the UI layer.
-        $missing = self::missingHeaders($header['header_normalized'], [$searchCol]);
-        if ($missing !== []) {
-            return ['ok' => false, 'message' => 'Thiếu cột trong file dữ liệu: ' . implode(', ', $missing)];
+            // Period uploads have historically accepted any spreadsheet layout.
+            // Keep that behavior: an employee-id column is only needed later when
+            // the file is used for employee-specific lookup, not for uploading it.
+            return ['ok' => true];
         }
 
         $typedColumns = [];

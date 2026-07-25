@@ -12,6 +12,7 @@ use App\Security;
 use App\Application\AdminActions;
 use App\Application\AdminFileManager;
 use App\Application\CheckActions;
+use App\Application\LeaveActions;
 
 Config::startSecureSession();
 Security::applySecurityHeaders();
@@ -750,6 +751,7 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                 <button type="button" class="admin-menu-item" data-target="tab-lookup" data-label="Tra cứu nhanh" onclick="switchTab('tab-lookup')"><i data-lucide="search-check"></i> <span>Tra cứu nhanh</span></button>
                 <button type="button" class="admin-menu-item" data-target="tab-cols" data-label="Cấu trúc" onclick="switchTab('tab-cols')"><i data-lucide="layout-grid"></i> <span>Cấu trúc</span></button>
                 <button type="button" class="admin-menu-item" data-target="tab-attendance" data-label="Chấm công" onclick="switchTab('tab-attendance')"><i data-lucide="clock-3"></i> <span>Chấm công</span></button>
+                <button type="button" class="admin-menu-item" data-target="tab-leave" data-label="Đơn nghỉ" onclick="switchTab('tab-leave')"><i data-lucide="calendar-off"></i> <span>Đơn nghỉ</span></button>
                 <button type="button" class="admin-menu-item" data-target="tab-ui" data-label="Giao diện" onclick="switchTab('tab-ui')"><i data-lucide="palette"></i> <span>Giao diện</span></button>
                 
                 <div class="sidebar-label">Bảo mật</div>
@@ -786,8 +788,10 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                 <?php endif; ?>
 
                 <form id="admin-form" method="POST" enctype="multipart/form-data">
-                    <input type="hidden" name="action" value="save_config_all">
+                    <input type="hidden" name="action" id="admin-action" value="save_config_all">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES) ?>">
+                    <input type="hidden" name="leave_id" id="leave-id" value="">
+                    <input type="hidden" name="decision" id="leave-decision" value="">
 
                     <!-- Tab: Periods -->
                     <div class="tab-pane active" id="tab-periods">
@@ -1351,6 +1355,7 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                                     <div class="field-grid-2">
                                         <div class="field-group"><label class="field-label">Cột Mã NV</label><input type="text" name="col_emp_id" class="field-input" value="<?= htmlspecialchars($config['col_emp_id'] ?? '') ?>"></div>
                                         <div class="field-group"><label class="field-label">Cột Mật khẩu</label><input type="text" name="col_password" class="field-input" value="<?= htmlspecialchars($config['col_password'] ?? '') ?>"></div>
+                                        <div class="field-group"><label class="field-label">Cột Vai trò</label><input type="text" name="col_role" class="field-input" value="<?= htmlspecialchars($config['col_role'] ?? 'VAI TRÒ') ?>"><div class="field-help-text">Dùng giá trị <code>leader</code> cho tổ trưởng nếu bật chế độ tổ trưởng xác thực.</div></div>
                                     </div>
                                 </div>
                                 <div class="settings-group">
@@ -1449,6 +1454,97 @@ $isLoggedIn = !empty($_SESSION['hr_admin']);
                                 </div>
                             </div>
                         </div>
+                    </div>
+                    <?php $leaveRows = LeaveActions::listAll()['requests'] ?? []; ?>
+                    <script>/*
+                    (function () {
+                        const records = <?= json_encode(array_map(static function (array $r): array { return ['id' => (string) ($r['MÃ ĐƠN'] ?? ''), 'employee_id' => (string) ($r['MÃ NV'] ?? ''), 'name' => (string) ($r['HỌ TÊN'] ?? ''), 'from' => (string) ($r['TỪ NGÀY'] ?? ''), 'to' => (string) ($r['ĐẾN NGÀY'] ?? ''), 'days' => (int) ($r['SỐ NGÀY'] ?? 0), 'status' => (string) ($r['TRẠNG THÁI'] ?? '')]; }, $leaveRows), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+                        const byId = Object.fromEntries(records.map(r => [r.id, r]));
+                        document.querySelectorAll('#tab-leave .auth-editor-table tbody tr').forEach(row => {
+                            const id = row.cells[0] ? row.cells[0].textContent.trim() : '';
+                            if (!byId[id] || !row.lastElementChild) return;
+                            const button = document.createElement('button');
+                            button.type = 'submit'; button.name = 'action'; button.value = 'leave_delete';
+                            button.className = 'btn btn-outline-secondary btn-sm'; button.textContent = 'Xóa';
+                            button.style.marginLeft = '6px';
+                            button.addEventListener('click', event => {
+                                if (!window.confirm('Xóa vĩnh viễn đơn ' + id + '? Thao tác này không thể hoàn tác.')) { event.preventDefault(); return; }
+                                document.getElementById('leave-id').value = id;
+                            });
+                            row.lastElementChild.appendChild(button);
+                        });
+                        const inputs = ['leave-filter-employee', 'leave-filter-from', 'leave-filter-to', 'leave-filter-status'].map(id => document.getElementById(id));
+                        const overlaps = (r, from, to) => (!from || r.to >= from) && (!to || r.from <= to);
+                        function applyLeaveFilters() {
+                            const [employee, from, to, status] = inputs.map(i => i ? i.value.trim().toLowerCase() : '');
+                            let count = 0, days = 0;
+                            document.querySelectorAll('#tab-leave .auth-editor-table tbody tr').forEach(row => {
+                                const id = row.cells[0] ? row.cells[0].textContent.trim() : '';
+                                const r = byId[id]; if (!r) return;
+                                const text = (r.employee_id + ' ' + r.name).toLowerCase();
+                                const show = (!employee || text.includes(employee)) && (!status || r.status.toLowerCase() === status) && overlaps(r, from, to);
+                                row.style.display = show ? '' : 'none';
+                                if (show) { count++; if (r.status === 'Đã duyệt') days += r.days; }
+                            });
+                            document.getElementById('leave-stat-count').textContent = String(count);
+                            document.getElementById('leave-stat-days').textContent = String(days);
+                        }
+                        inputs.forEach(i => i && i.addEventListener('input', applyLeaveFilters));
+                        applyLeaveFilters();
+                    })();
+                    */</script>
+
+                    <!-- Tab: UI -->
+                    <div class="tab-pane" id="tab-leave">
+                        <?php $leaveEnabled = ($config['leave_request_enabled'] ?? false) === true; $leaveRows = LeaveActions::listAll()['requests'] ?? []; ?>
+                        <script>
+                        document.addEventListener('DOMContentLoaded', function () {
+                            document.querySelectorAll('#tab-leave button[value="leave_decision"]').forEach(button => button.addEventListener('click', function () {
+                                document.getElementById('admin-action').value = 'leave_decision';
+                                const row = this.closest('tr');
+                                document.getElementById('leave-id').value = row && row.cells[0] ? row.cells[0].textContent.trim() : '';
+                                document.getElementById('leave-decision').value = this.textContent.trim() === 'Duyệt' ? 'approved' : 'rejected';
+                            }));
+                            const records = <?= json_encode(array_map(static function (array $r): array { return ['id'=>(string)($r['MÃ ĐƠN']??''),'employee_id'=>(string)($r['MÃ NV']??''),'name'=>(string)($r['HỌ TÊN']??''),'from'=>(string)($r['TỪ NGÀY']??''),'to'=>(string)($r['ĐẾN NGÀY']??''),'days'=>(float)($r['SỐ NGÀY']??0),'status'=>(string)($r['TRẠNG THÁI']??'')]; }, $leaveRows), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+                            const byId = Object.fromEntries(records.map(r => [r.id, r]));
+                            const rows = [...document.querySelectorAll('#tab-leave .auth-editor-table tbody tr')];
+                            const tbody = document.querySelector('#tab-leave .auth-editor-table tbody');
+                            function section(label, cssClass, items) {
+                                if (!items.length) return;
+                                const heading = document.createElement('tr'); heading.className = 'leave-list-section ' + cssClass;
+                                heading.innerHTML = '<td colspan="6"><span>' + label + '</span><b>' + items.length + ' đơn</b></td>';
+                                tbody.appendChild(heading); items.forEach(row => tbody.appendChild(row));
+                            }
+                            if (tbody) {
+                                section('Đơn chưa duyệt', 'leave-list-section--pending', rows.filter(row => byId[row.cells[0]?.textContent.trim()]?.status !== 'Đã duyệt'));
+                                section('Đơn đã duyệt', 'leave-list-section--approved', rows.filter(row => byId[row.cells[0]?.textContent.trim()]?.status === 'Đã duyệt'));
+                            }
+                            rows.forEach(row => { const id=row.cells[0]?.textContent.trim(), cell=row.lastElementChild; if (!byId[id] || !cell) return; const b=document.createElement('button'); b.type='submit';b.name='action';b.value='leave_delete';b.className='btn btn-outline-secondary btn-sm';b.textContent='Xóa';b.style.marginLeft='6px';b.onclick=e=>{if(!confirm('Xóa vĩnh viễn đơn '+id+'?')){e.preventDefault();return;}document.getElementById('admin-action').value='leave_delete';document.getElementById('leave-id').value=id;};cell.appendChild(b); });
+                            const employee=document.getElementById('leave-filter-employee'),from=document.getElementById('leave-filter-from'),to=document.getElementById('leave-filter-to'),status=document.getElementById('leave-filter-status');
+                            if (employee) {
+                                const picker = document.createElement('div'); picker.className = 'leave-employee-suggestions'; employee.parentElement.classList.add('leave-employee-picker'); employee.parentElement.appendChild(picker);
+                                let searchTimer;
+                                employee.addEventListener('input', () => { clearTimeout(searchTimer); const query = employee.value.trim(); if (!query) { picker.innerHTML = ''; return; } searchTimer = setTimeout(async () => {
+                                    const data = new FormData(); data.append('ajax_action', 'search_auth_employee_lookup'); data.append('query', query); data.append('csrf_token', window.HR_CSRF_TOKEN || '');
+                                    try { const response = await fetch('admin.php', {method:'POST', body:data}); const json = await response.json(); if (!json.ok) throw Error(); picker.innerHTML = ''; (json.employees || []).forEach(person => { const option = document.createElement('button'); option.type = 'button'; option.innerHTML = '<strong></strong><span></span>'; option.querySelector('strong').textContent = (person.name || 'Chưa có tên') + ' · ' + (person.emp_id_display || person.emp_id || ''); option.querySelector('span').textContent = person.department || 'Chưa có bộ phận'; option.onclick = () => { employee.value = person.emp_id_display || person.emp_id || ''; picker.innerHTML = ''; filter(); }; picker.appendChild(option); }); } catch (_) { picker.innerHTML = ''; }
+                                }, 220); });
+                                document.addEventListener('click', e => { if (!employee.parentElement.contains(e.target)) picker.innerHTML = ''; });
+                            }
+                            function filter(){let n=0,d=0,q=employee.value.trim().toLowerCase();rows.forEach(row=>{let r=byId[row.cells[0]?.textContent.trim()];if(!r)return;let ok=(!q||(r.employee_id+' '+r.name).toLowerCase().includes(q))&&(!from.value||r.to>=from.value)&&(!to.value||r.from<=to.value)&&(!status.value||r.status===status.value);row.style.display=ok?'':'none';if(ok){n++;if(r.status==='Đã duyệt')d+=r.days;}});document.getElementById('leave-stat-count').textContent=n;document.getElementById('leave-stat-days').textContent=d;}
+                            const actions = document.createElement('div'); actions.className = 'leave-filter-actions';
+                            const searchButton = document.createElement('button'); searchButton.type = 'button'; searchButton.className = 'btn btn-primary'; searchButton.textContent = 'Tra cứu'; searchButton.onclick = filter;
+                            const resetButton = document.createElement('button'); resetButton.type = 'button'; resetButton.className = 'btn btn-outline-secondary'; resetButton.textContent = 'Làm mới'; resetButton.onclick = () => { employee.value=''; from.value=''; to.value=''; status.value=''; filter(); };
+                            actions.append(searchButton, resetButton); status.closest('.field-grid-2').after(actions);
+                            [employee,from,to,status].forEach(el=>el.addEventListener('input',filter)); filter();
+                        });
+                        </script>
+                        <div class="admin-card"><div class="admin-card-header"><h2 class="admin-card-title"><i data-lucide="calendar-off"></i> Đơn xin nghỉ</h2></div><div class="admin-card-body">
+                            <div class="field-group"><label class="period-toggle-row"><input type="checkbox" <?= $leaveEnabled ? 'checked' : '' ?> onchange="this.nextElementSibling.value=this.checked?'1':'0';this.parentElement.querySelector('span').textContent=this.checked?'Đang bật chức năng nộp đơn nghỉ':'Đang tắt chức năng nộp đơn nghỉ';"><input type="hidden" name="leave_request_enabled" value="<?= $leaveEnabled ? '1' : '0' ?>"><span><?= $leaveEnabled ? 'Đang bật chức năng nộp đơn nghỉ' : 'Đang tắt chức năng nộp đơn nghỉ' ?></span></label></div>
+                            <div class="field-group"><label class="field-label">Kiểu xác thực khi nhân viên nộp đơn</label><select name="leave_verification_mode" class="field-input"><option value="any_employee" <?= ($config['leave_verification_mode'] ?? '') === 'any_employee' ? 'selected' : '' ?>>Bất kỳ nhân viên hợp lệ</option><option value="leader" <?= ($config['leave_verification_mode'] ?? '') === 'leader' ? 'selected' : '' ?>>Tổ trưởng cùng bộ phận</option></select></div>
+                            <p class="field-help-text">Các thay đổi cấu hình được áp dụng khi nhấn nút Lưu thay đổi ở cuối trang.</p>
+                        </div></div>
+                        <div class="admin-card"><div class="admin-card-header"><h2 class="admin-card-title"><i data-lucide="chart-no-axes-combined"></i> Tra cứu & thống kê nghỉ</h2></div><div class="admin-card-body"><div class="field-grid-2"><div class="field-group"><label class="field-label">Mã NV hoặc tên nhân viên</label><input id="leave-filter-employee" type="text" class="field-input" placeholder="Nhập Mã NV hoặc tên"></div><div class="field-group"><label class="field-label">Từ ngày</label><input id="leave-filter-from" type="date" class="field-input"></div><div class="field-group"><label class="field-label">Đến ngày</label><input id="leave-filter-to" type="date" class="field-input"></div><div class="field-group"><label class="field-label">Trạng thái</label><select id="leave-filter-status" class="field-input"><option value="">Tất cả trạng thái</option><option>Chờ xác thực</option><option>Chờ quản lý duyệt</option><option>Đã duyệt</option><option>Từ chối</option></select></div></div><div class="stat-row" style="margin-top:16px"><div class="stat-card"><div class="stat-label">Số đơn phù hợp</div><div class="stat-value" id="leave-stat-count">0</div></div><div class="stat-card"><div class="stat-label">Tổng ngày nghỉ</div><div class="stat-value" id="leave-stat-days">0</div></div></div><div class="field-help-text">Tổng ngày tính theo các đơn đã duyệt trong khoảng ngày được chọn. Để trống khoảng ngày để xem toàn bộ.</div></div></div>
+                        <div class="admin-card"><div class="admin-card-header"><h2 class="admin-card-title">Danh sách đơn</h2></div><div class="admin-card-body" style="overflow:auto"><table class="auth-editor-table"><thead><tr><th>Mã đơn</th><th>Người nộp</th><th>Nghỉ</th><th>Người xác thực</th><th>Trạng thái</th><th>Xử lý</th></tr></thead><tbody><?php foreach ($leaveRows as $leave): ?><tr><td><?= htmlspecialchars($leave['MÃ ĐƠN'] ?? '') ?></td><td><?= htmlspecialchars(($leave['HỌ TÊN'] ?? '') . ' · ' . ($leave['BỘ PHẬN'] ?? '')) ?><br><small><?= htmlspecialchars($leave['LOẠI NGHỈ'] ?? '') ?>: <?= htmlspecialchars(($leave['TỪ NGÀY'] ?? '') . ' → ' . ($leave['ĐẾN NGÀY'] ?? '')) ?></small></td><td><?= htmlspecialchars($leave['LÝ DO'] ?? '') ?></td><td><?= htmlspecialchars(($leave['TÊN NGƯỜI XÁC THỰC'] ?? '') . ' · ' . ($leave['MÃ NGƯỜI XÁC THỰC'] ?? '')) ?><br><small><?= htmlspecialchars($leave['KIỂU XÁC THỰC'] ?? '') ?> · <?= htmlspecialchars($leave['THỜI GIAN XÁC THỰC'] ?? '') ?></small></td><td><?= htmlspecialchars($leave['TRẠNG THÁI'] ?? '') ?></td><td><?php if (($leave['TRẠNG THÁI'] ?? '') === 'Chờ quản lý duyệt'): ?><button type="submit" name="action" value="leave_decision" class="btn btn-primary btn-sm" onclick="document.getElementById('leave-id').value='<?= htmlspecialchars($leave['MÃ ĐƠN'] ?? '', ENT_QUOTES) ?>';document.getElementById('leave-decision').value='approved'">Duyệt</button><button type="submit" name="action" value="leave_decision" class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('leave-id').value='<?= htmlspecialchars($leave['MÃ ĐƠN'] ?? '', ENT_QUOTES) ?>';document.getElementById('leave-decision').value='rejected'">Từ chối</button><?php else: ?><small><?= htmlspecialchars($leave['GHI CHÚ QUẢN LÝ'] ?? '') ?></small><?php endif; ?></td></tr><?php endforeach; ?></tbody></table><?php if (!$leaveRows): ?><p class="field-help-text">Chưa có đơn nghỉ nào.</p><?php endif; ?></div></div>
                     </div>
 
                     <!-- Tab: UI -->

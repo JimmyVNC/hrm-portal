@@ -8,12 +8,12 @@ class ConfigSchema {
         if (!isset($config['periods']) || !is_array($config['periods'])) {
             $errors[] = 'periods phải là mảng.';
         }
-        foreach (['auth_sheet_id', 'auth_gid', 'admin_password', 'col_emp_id', 'col_password', 'check_api_url', 'check_available_from', 'check_available_until', 'check_month_days', 'employee_notice'] as $key) {
+        foreach (['auth_sheet_id', 'auth_gid', 'admin_password', 'col_emp_id', 'col_password', 'col_role', 'check_api_url', 'check_available_from', 'check_available_until', 'check_month_days', 'employee_notice', 'leave_verification_mode'] as $key) {
             if (isset($config[$key]) && !is_string($config[$key])) {
                 $errors[] = $key . ' phải là chuỗi.';
             }
         }
-        foreach (['check_enabled', 'payroll_share_enabled'] as $key) {
+        foreach (['check_enabled', 'payroll_share_enabled', 'leave_request_enabled', 'leave_link_requires_verifier_id'] as $key) {
             if (isset($config[$key]) && !is_bool($config[$key])) {
                 $errors[] = $key . ' phải là boolean.';
             }
@@ -25,6 +25,9 @@ class ConfigSchema {
         }
         if (isset($config['auth_source_type']) && !in_array($config['auth_source_type'], ['google', 'local'], true)) {
             $errors[] = 'auth_source_type phải là google hoặc local.';
+        }
+        if (isset($config['leave_verification_mode']) && !in_array($config['leave_verification_mode'], ['leader', 'any_employee'], true)) {
+            $errors[] = 'leave_verification_mode không hợp lệ.';
         }
         if (isset($config['periods']) && is_array($config['periods'])) {
             foreach ($config['periods'] as $idx => $period) {

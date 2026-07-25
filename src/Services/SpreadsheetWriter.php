@@ -29,7 +29,7 @@ class SpreadsheetWriter
      * @param string $outputPath Đường dẫn tuyệt đối đến file output.
      * @return bool  true nếu thành công.
      */
-    public static function toXlsx(array $rows, string $outputPath): bool
+    public static function toXlsx(array $rows, string $outputPath, bool $encrypt = true): bool
     {
         if (!class_exists('ZipArchive')) {
             error_log('[SpreadsheetWriter] ZipArchive extension is not available.');
@@ -159,7 +159,7 @@ class SpreadsheetWriter
         }
         @chmod($outputPath, 0600);
 
-        return FileCrypto::encryptFileInPlace($outputPath);
+        return !$encrypt || FileCrypto::encryptFileInPlace($outputPath);
     }
 
     /**

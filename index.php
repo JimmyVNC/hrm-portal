@@ -13,6 +13,7 @@ use App\Security;
 use App\Application\AuthActions;
 use App\Application\DataActions;
 use App\Application\CheckActions;
+use App\Application\LeaveActions;
 use App\Services\FileCrypto;
 
 function ensureShareDir(): string {
@@ -147,7 +148,7 @@ expireInactiveEmployeeSession($config);
 $isAdmin = !empty($_SESSION['hr_admin']);
 $safeHeroTitle = strip_tags((string) ($config['site_hero_title'] ?? ''), '<br>');
 $requestedPage = (string) ($_GET['page'] ?? '');
-$currentPage = in_array($requestedPage, ['attendance', 'payroll_result'], true) ? $requestedPage : 'payroll';
+$currentPage = in_array($requestedPage, ['attendance', 'payroll_result', 'leave', 'leave_verify'], true) ? $requestedPage : 'payroll';
 $showAttendanceModule = CheckActions::isModuleEnabled($config) || $isAdmin || !empty($_GET['share']);
 $latestPayrollUpdateLabel = DataActions::getLatestPayrollUpdateLabel($config);
 $employeeNotice = trim((string) ($config['employee_notice'] ?? ''));
@@ -183,6 +184,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         'matched_rows' => (int) ($result['matched_rows'] ?? 0),
     ]);
     echo json_encode($result);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array(($_POST['action'] ?? ''), ['leave_submit', 'leave_list', 'leave_create_share', 'leave_confirm_share'], true)) {
+    header('Content-Type: application/json; charset=utf-8');
+    if (!Security::validateCsrfToken($_POST['csrf_token'] ?? '')) { echo json_encode(['success' => false, 'message' => 'Yêu cầu không hợp lệ.']); exit; }
+    if (($_POST['action'] ?? '') === 'leave_submit') echo json_encode(LeaveActions::submit($config, $_POST));
+    elseif (($_POST['action'] ?? '') === 'leave_create_share') echo json_encode(LeaveActions::createShareLink($config, $_POST));
+    elseif (($_POST['action'] ?? '') === 'leave_confirm_share') echo json_encode(LeaveActions::confirmShared($config, (string)($_POST['token'] ?? ''), (string)($_POST['verifier_id'] ?? ''), (string)($_POST['verifier_password'] ?? '')));
+    else {
+        $user = $_SESSION['hr_user'] ?? null;
+        echo json_encode(is_array($user) ? LeaveActions::listForEmployee((string)($user['id'] ?? '')) : ['success'=>false,'message'=>'Vui lòng đăng nhập lại.']);
+    }
     exit;
 }
 
@@ -314,6 +328,16 @@ if ($currentPage === 'attendance') {
     exit;
 }
 
+if ($currentPage === 'leave') {
+    require __DIR__ . '/views/leave.php';
+    exit;
+}
+
+if ($currentPage === 'leave_verify') {
+    require __DIR__ . '/views/leave_verify.php';
+    exit;
+}
+
 if ($currentPage === 'payroll_result') {
     $payrollShareToken = trim((string) ($_GET['share'] ?? ''));
     require __DIR__ . '/views/payroll_result.php';
@@ -352,6 +376,9 @@ if ($currentPage === 'payroll_result') {
                 <a href="index.php" class="module-switch-link active" aria-current="page">Phiếu lương</a>
                 <?php if ($showAttendanceModule): ?>
                     <a href="index.php?page=attendance" class="module-switch-link">Chấm công</a>
+                <?php endif; ?>
+                <?php if (($config['leave_request_enabled'] ?? false) === true): ?>
+                    <a href="index.php?page=leave" class="module-switch-link">Đơn nghỉ</a>
                 <?php endif; ?>
             </div>
             <?php if ($latestPayrollUpdateLabel !== ''): ?>

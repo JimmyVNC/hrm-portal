@@ -70,6 +70,7 @@ class AuthActions {
             $colPass  = isset($config['col_password']) ? self::normalizeHeaderValue($config['col_password']) : 'MẬT KHẨU';
             $colName  = isset($config['col_emp_name']) ? self::normalizeHeaderValue($config['col_emp_name']) : 'HỌ TÊN';
             $colDept  = isset($config['col_department']) ? self::normalizeHeaderValue($config['col_department']) : 'BỘ PHẬN';
+            $colRole  = isset($config['col_role']) ? self::normalizeHeaderValue($config['col_role']) : 'VAI TRÒ';
             $header = [];
 
             foreach ($rows as $i => $row) {
@@ -87,6 +88,14 @@ class AuthActions {
             $pCol = array_search($colPass, $header, true);
             $nCol = array_search($colName, $header, true);
             $dCol = array_search($colDept, $header, true);
+            $rCol = array_search($colRole, $header, true);
+            // File xác thực thực tế thường dùng "HỌ TÊN" thay vì tên cột cấu hình đầy đủ.
+            if ($nCol === false) {
+                foreach (['HỌ TÊN', 'HỌ VÀ TÊN', 'TÊN NHÂN VIÊN', 'HỌ TÊN NV'] as $fallbackName) {
+                    $candidate = array_search($fallbackName, $header, true);
+                    if ($candidate !== false) { $nCol = $candidate; break; }
+                }
+            }
             $cleanInputId = ltrim(trim($empId), '0');
             $cleanInputId = $cleanInputId === '' ? '0' : $cleanInputId;
 
@@ -110,7 +119,8 @@ class AuthActions {
                         'user' => [
                             'id' => $rowId,
                             'name' => ($nCol !== false && isset($row[$nCol])) ? trim($row[$nCol]) : $rowId,
-                            'department' => ($dCol !== false && isset($row[$dCol])) ? trim($row[$dCol]) : ''
+                            'department' => ($dCol !== false && isset($row[$dCol])) ? trim($row[$dCol]) : '',
+                            'role' => ($rCol !== false && isset($row[$rCol])) ? strtolower(trim($row[$rCol])) : 'employee',
                         ]
                     ];
                 }
@@ -122,5 +132,43 @@ class AuthActions {
             Security::appLog('error', 'verify_user_failed', ['error' => $e->getMessage()]);
             return ['success' => false, 'message' => 'Hệ thống xác thực chưa sẵn sàng. Vui lòng báo bộ phận nhân sự kiểm tra.'];
         }
+    }
+
+    /** Lấy lại tên/bộ phận theo Mã NV cho các phiên đăng nhập cũ. */
+    public static function getUserProfile(array $config, string $empId): ?array {
+        $empId = trim($empId);
+        if ($empId === '') return null;
+        try {
+            $maxRows = (int) Config::getEnvValue('AUTH_MAX_ROWS', 50000); $maxCols = (int) Config::getEnvValue('AUTH_MAX_COLS', 500);
+            if (($config['auth_source_type'] ?? 'google') === 'local') {
+                $path = self::resolveUploadFilePath($config['auth_local_file'] ?? '');
+                if ($path === false) return null;
+                $rows = SpreadsheetReader::fromLocalFile($path, 0, $maxRows, $maxCols);
+            } else {
+                $sheetId = (string) ($config['auth_sheet_id'] ?? '');
+                if ($sheetId === '') return null;
+                $rows = SpreadsheetReader::fromGoogleCsv($sheetId, (string) ($config['auth_gid'] ?? '0'), (int) Config::getEnvValue('GOOGLE_CACHE_TTL', 60), $maxRows, $maxCols);
+            }
+            $idHeader = self::normalizeHeaderValue($config['col_emp_id'] ?? 'MÃ NV');
+            $nameHeader = self::normalizeHeaderValue($config['col_emp_name'] ?? 'HỌ TÊN');
+            $deptHeader = self::normalizeHeaderValue($config['col_department'] ?? 'BỘ PHẬN');
+            $wanted = ltrim($empId, '0'); $wanted = $wanted === '' ? '0' : $wanted;
+            foreach ($rows as $i => $row) {
+                $header = array_map(static fn($v) => self::normalizeHeaderValue($v), $row);
+                $idCol = array_search($idHeader, $header, true);
+                if ($idCol === false) continue;
+                $nameCol = array_search($nameHeader, $header, true);
+                if ($nameCol === false) foreach (['HỌ TÊN', 'HỌ VÀ TÊN', 'TÊN NHÂN VIÊN', 'HỌ TÊN NV'] as $fallback) { $candidate = array_search($fallback, $header, true); if ($candidate !== false) { $nameCol = $candidate; break; } }
+                $deptCol = array_search($deptHeader, $header, true);
+                foreach (array_slice($rows, $i + 1) as $data) {
+                    $rawId = trim((string)($data[$idCol] ?? ''), " \t\n\r\0\x0B'");
+                    $cleanId = ltrim($rawId, '0'); $cleanId = $cleanId === '' ? '0' : $cleanId;
+                    if ($cleanId !== $wanted) continue;
+                    return ['id' => $cleanId, 'name' => $nameCol !== false ? trim((string)($data[$nameCol] ?? '')) : '', 'department' => $deptCol !== false ? trim((string)($data[$deptCol] ?? '')) : ''];
+                }
+                break;
+            }
+        } catch (Throwable $e) { Security::appLog('warning', 'get_user_profile_failed', ['error' => $e->getMessage()]); }
+        return null;
     }
 }

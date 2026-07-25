@@ -1,0 +1,98 @@
+{
+    "POST": {
+        "action": "save_config_all",
+        "csrf_token": "61857b02dbbc74c78b6d61afbbfd4fa7324f1b8e7819f198c55317e585f780ae",
+        "period_ids": [
+            "0",
+            "1"
+        ],
+        "period_labels": [
+            "BẢNG LƯƠNG THÁNG 06\/2026",
+            "CHI TIẾT THƯỞNG 06\/2026"
+        ],
+        "period_publish_dates": [
+            "2026-07-07T18:45",
+            "2026-07-07T18:45"
+        ],
+        "period_enableds": [
+            "1",
+            "1"
+        ],
+        "period_source_types": [
+            "local",
+            "local"
+        ],
+        "period_sheet_ids": [
+            "1-5PdYKbTAfptgw_cDbaQsC85yInFrouw2cyba4xLSgQ",
+            "1-5PdYKbTAfptgw_cDbaQsC85yInFrouw2cyba4xLSgQ"
+        ],
+        "period_gids": [
+            "63709101",
+            "1889132824"
+        ],
+        "period_local_files": [
+            "uploads\/up_64875b96408e8fe1.xlsx",
+            "uploads\/up_19cf233ac5b63461.xlsx"
+        ],
+        "period_sheet_indexes": [
+            "0",
+            "2"
+        ],
+        "period_sheet_names": [
+            "LƯƠNG",
+            "THƯỞNG"
+        ],
+        "period_cols": [
+            "Lương CB, PC Lương tính BHXH, Lương khấu trừ BHXH, Lương thực tế, Ngày công, Lương HTCV, Giờ tăng ca, Tiền tăng ca, Thưởng chung, Tổng tiền lương, NLD BHXH BHYT BHTN, Tạm ứng ngày 20 tây, Số nhận chuyển khoản, Tạm ứng mua điện thoại, Tạm ứng mượn riêng, TT tham gia sinh nhật, Tiền quán hàng tháng, Tạm ứng đi Du lịch, Tạm ứng khác, PC công tác, PC nuôi CN, Trừ thuế TNCN, Trừ Đoàn phí, Tổng số tiền phải TT lại, Thực lãnh",
+            "Lương thực tế, Ngày công, Giờ tăng ca, VT & VS, PC HTCV, PC cơm, PC điện thoại, PC đủ ngày, PC nhà, PC chuyên cần, PC công tác, PC nuôi CN, PC độc hại, PC SL T.Cuộn, PC SL T.Cây, PC ca đêm, Tiền sản lượng, Sản lượng cuộn cây, Thưởng khác, Trừ VT & VS, Kỷ luật, Nghĩ KP, Trừ TN, Thưởng chung"
+        ],
+        "period_highlight_cols": [
+            "Số nhận chuyển khoản, Tổng số tiền phải TT lại, Thực lãnh",
+            "Thưởng chung"
+        ],
+        "period_money_cols": [
+            "Lương CB, PC Lương tính BHXH, Lương khấu trừ BHXH, Lương thực tế, Lương HTCV, Tiền tăng ca, Thưởng chung, Tổng tiền lương, NLD BHXH BHYT BHTN, Tạm ứng ngày 20 tây, Số nhận chuyển khoản, Tạm ứng mua điện thoại, Tạm ứng mượn riêng, TT tham gia sinh nhật, Tiền quán hàng tháng, Tạm ứng đi Du lịch, Tạm ứng khác, PC công tác, PC nuôi CN, Trừ thuế TNCN, Trừ Đoàn phí, Tổng số tiền phải TT lại, Thực lãnh",
+            "Lương thực tế, PC HTCV, PC cơm, PC điện thoại, PC đủ ngày, PC nhà, PC chuyên cần, PC công tác, PC nuôi CN, PC độc hại, PC SL T.Cuộn, PC SL T.Cây, PC ca đêm, Tiền sản lượng, Sản lượng cuộn cây, Thưởng khác, Trừ VT & VS, Kỷ luật, Nghĩ KP, Trừ TN, Thưởng chung"
+        ],
+        "auth_source_type": "local",
+        "auth_sheet_id": "1_1IMuV7WnNv3UQO6HK7fKXs1M7VDSFWBUuVSCN4X8T8",
+        "auth_gid": "1484524032",
+        "auth_local_file": "uploads\/auth_5a8f28936982c5d4.xlsx",
+        "col_emp_id": "MÃ NV",
+        "col_password": "MẬT KHẨU",
+        "stat_cols": "Tổng số tiền phải TT lại, Thực lãnh",
+        "check_enabled": "0",
+        "check_api_url": "http:\/\/webapi.thepvinhthanh.com\/mitaco-api.aspx",
+        "check_available_from": "",
+        "check_available_until": "",
+        "check_month_days": "",
+        "site_company": "",
+        "site_logo_text": "",
+        "site_hero_title": "Tra Cứu Bảng Công<br>& Thu Nhập",
+        "site_hero_desc": "Nhập mã nhân viên và mật khẩu để xem chi tiết bảng lương",
+        "employee_notice": "",
+        "new_admin_pass": "",
+        "app_file_encryption_key": "base64:juM1Y7hKg2em6zf8lo0Z1RZLJR1mu4NHK\/2v6g7nxM4=",
+        "payroll_share_enabled": "1",
+        "payroll_share_ttl_hours": "2",
+        "employee_session_timeout_minutes": "5"
+    },
+    "FILES": {
+        "period_file_0": {
+            "name": "",
+            "full_path": "",
+            "type": "",
+            "tmp_name": "",
+            "error": 4,
+            "size": 0
+        },
+        "period_file_1": {
+            "name": "",
+            "full_path": "",
+            "type": "",
+            "tmp_name": "",
+            "error": 4,
+            "size": 0
+        }
+    }
+}

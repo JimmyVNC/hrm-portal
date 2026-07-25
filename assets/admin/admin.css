@@ -2622,3 +2622,59 @@ body.is-admin-login {
         animation-iteration-count: 1 !important;
     }
 }
+
+/* Leave request list — roomy review layout */
+#tab-leave .admin-card:has(.auth-editor-table) { overflow: hidden; }
+#tab-leave .admin-card:has(.auth-editor-table) .admin-card-header { padding: 22px 24px 16px; border-bottom: 1px solid #e8edf5; }
+#tab-leave .auth-editor-table { min-width: 1180px; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+#tab-leave .auth-editor-table thead th { position: sticky; top: 0; z-index: 2; padding: 13px 16px; background: #f7f9fd; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; border-bottom: 1px solid #dfe6f0; }
+#tab-leave .auth-editor-table thead th:nth-child(1) { width: 126px; }
+#tab-leave .auth-editor-table thead th:nth-child(2) { width: 245px; }
+#tab-leave .auth-editor-table thead th:nth-child(3) { width: 240px; }
+#tab-leave .auth-editor-table thead th:nth-child(4) { width: 255px; }
+#tab-leave .auth-editor-table thead th:nth-child(5) { width: 135px; }
+#tab-leave .auth-editor-table thead th:nth-child(6) { width: 180px; }
+#tab-leave .auth-editor-table tbody tr { background: #fff; }
+#tab-leave .auth-editor-table tbody tr:nth-child(even) { background: #fbfcff; }
+#tab-leave .auth-editor-table td { padding: 18px 16px; vertical-align: top; border-bottom: 1px solid #e8edf5; color: #334155; font-size: 12px; line-height: 1.55; white-space: normal; overflow-wrap: anywhere; }
+#tab-leave .auth-editor-table td:first-child { color: #4f46e5; font-weight: 800; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+#tab-leave .auth-editor-table td:nth-child(2) { color: #172554; font-weight: 700; }
+#tab-leave .auth-editor-table td small { display: inline-block; margin-top: 5px; color: #64748b; font-weight: 500; font-size: 11px; line-height: 1.5; }
+#tab-leave .auth-editor-table td:nth-child(5) { font-weight: 800; color: #92400e; }
+#tab-leave .auth-editor-table td:last-child { white-space: nowrap; }
+#tab-leave .auth-editor-table .btn { min-height: 32px; padding: 6px 10px; font-size: 11px; }
+#tab-leave .auth-editor-table .leave-list-section td { padding: 11px 16px; border-bottom: 1px solid #dfe6f0; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+#tab-leave .auth-editor-table .leave-list-section td span { margin-right: 9px; }
+#tab-leave .auth-editor-table .leave-list-section td b { display: inline-flex; padding: 3px 7px; border-radius: 999px; font-size: 10px; letter-spacing: 0; text-transform: none; }
+#tab-leave .auth-editor-table .leave-list-section--pending td { background: #fffbeb; color: #92400e; }
+#tab-leave .auth-editor-table .leave-list-section--pending td b { background: #fef3c7; color: #a16207; }
+#tab-leave .auth-editor-table .leave-list-section--approved td { background: #ecfdf5; color: #047857; }
+#tab-leave .auth-editor-table .leave-list-section--approved td b { background: #d1fae5; color: #047857; }
+.leave-employee-picker { position: relative; }
+.leave-employee-suggestions { position: absolute; left: 0; right: 0; top: calc(100% + 5px); z-index: 30; max-height: 245px; overflow-y: auto; border-radius: 10px; background: #fff; box-shadow: 0 12px 28px rgba(15,23,42,.16); }
+.leave-employee-suggestions:empty { display: none; }
+.leave-employee-suggestions button { width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid #eef2f7; background: #fff; text-align: left; cursor: pointer; }
+.leave-employee-suggestions button:hover { background: #f5f3ff; }
+.leave-employee-suggestions strong, .leave-employee-suggestions span { display: block; }
+.leave-employee-suggestions strong { color: #1e293b; font-size: 12px; }
+.leave-employee-suggestions span { margin-top: 2px; color: #64748b; font-size: 11px; }
+.employee-autocomplete-host { position: relative; }
+.employee-autocomplete-menu { position: absolute; top: calc(100% + 5px); left: 0; right: 0; z-index: 40; max-height: 245px; overflow-y: auto; border-radius: 10px; background: #fff; box-shadow: 0 12px 28px rgba(15,23,42,.16); }
+.employee-autocomplete-menu:empty { display: none; }
+.employee-autocomplete-menu button { display: block; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid #eef2f7; background: #fff; text-align: left; cursor: pointer; }
+.employee-autocomplete-menu button:hover { background: #f5f3ff; }
+.employee-autocomplete-menu strong, .employee-autocomplete-menu span { display: block; }
+.employee-autocomplete-menu strong { color: #1e293b; font-size: 12px; }
+.employee-autocomplete-menu span { margin-top: 2px; color: #64748b; font-size: 11px; }
+.leave-filter-actions { display: flex; gap: 8px; margin-top: 16px; }
+.leave-filter-actions .btn { min-width: 112px; }
+@media (max-width: 720px) {
+  #tab-leave .auth-editor-table { min-width: 0; }
+  #tab-leave .auth-editor-table, #tab-leave .auth-editor-table tbody, #tab-leave .auth-editor-table tr, #tab-leave .auth-editor-table td { display: block; width: 100%; }
+  #tab-leave .auth-editor-table thead { display: none; }
+  #tab-leave .auth-editor-table tbody { display: grid; gap: 12px; padding: 12px; }
+  #tab-leave .auth-editor-table tbody tr { border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 8px rgba(15,23,42,.04); }
+  #tab-leave .auth-editor-table td { position: relative; padding: 10px 14px 10px 118px; border-bottom: 1px solid #eef2f7; min-height: 40px; }
+  #tab-leave .auth-editor-table td::before { position: absolute; left: 14px; top: 10px; width: 95px; color: #94a3b8; font-size: 10px; font-weight: 800; text-transform: uppercase; content: ''; }
+  #tab-leave .auth-editor-table td:nth-child(1)::before { content: 'Mã đơn'; } #tab-leave .auth-editor-table td:nth-child(2)::before { content: 'Người nộp'; } #tab-leave .auth-editor-table td:nth-child(3)::before { content: 'Lý do'; } #tab-leave .auth-editor-table td:nth-child(4)::before { content: 'Xác thực'; } #tab-leave .auth-editor-table td:nth-child(5)::before { content: 'Trạng thái'; } #tab-leave .auth-editor-table td:nth-child(6)::before { content: 'Xử lý'; }
+}

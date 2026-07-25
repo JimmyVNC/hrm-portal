@@ -2325,6 +2325,13 @@ document.addEventListener('DOMContentLoaded', function () {
         renderQuickLookupEmptyCard();
         updateQuickLookupActionButtons();
     }
+    enableEmployeeAutocomplete('qa-emp-id', (person) => {
+        const name = document.getElementById('qa-emp-name');
+        const dept = document.getElementById('qa-emp-dept');
+        if (name) name.value = person.name || '';
+        if (dept) dept.value = person.department || '';
+    });
+    enableEmployeeAutocomplete('attendance-admin-emp-id');
     setupAdminFormSubmit();
     initAuthUploadZoneDragDrop();
 });
@@ -2388,4 +2395,50 @@ function setupAdminFormSubmit() {
 
         startSmoothSubmitProgress(overlay, { hasFiles });
     });
+}
+
+// Reusable employee autocomplete for Admin fields that accept an employee ID.
+function enableEmployeeAutocomplete(inputId, onSelect) {
+    const input = document.getElementById(inputId);
+    if (!input || input.dataset.employeeAutocomplete === '1') return;
+    input.dataset.employeeAutocomplete = '1';
+    input.autocomplete = 'off';
+    const host = input.parentElement;
+    host.classList.add('employee-autocomplete-host');
+    const menu = document.createElement('div');
+    menu.className = 'employee-autocomplete-menu';
+    host.appendChild(menu);
+    let timer;
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        const query = input.value.trim();
+        if (!query) { menu.innerHTML = ''; return; }
+        timer = setTimeout(async () => {
+            const body = new FormData();
+            body.append('ajax_action', 'search_auth_employee_lookup');
+            body.append('query', query);
+            body.append('csrf_token', window.HR_CSRF_TOKEN || '');
+            try {
+                const response = await fetch('admin.php', { method: 'POST', body });
+                const json = await response.json();
+                if (!json.ok) throw new Error();
+                menu.innerHTML = '';
+                (json.employees || []).forEach(person => {
+                    const option = document.createElement('button');
+                    option.type = 'button';
+                    const id = person.emp_id_display || person.emp_id || '';
+                    option.innerHTML = '<strong></strong><span></span>';
+                    option.querySelector('strong').textContent = (person.name || 'Chưa có tên') + ' · ' + id;
+                    option.querySelector('span').textContent = person.department || 'Chưa có bộ phận';
+                    option.addEventListener('click', () => {
+                        input.value = id;
+                        menu.innerHTML = '';
+                        if (typeof onSelect === 'function') onSelect(person);
+                    });
+                    menu.appendChild(option);
+                });
+            } catch (_) { menu.innerHTML = ''; }
+        }, 220);
+    });
+    document.addEventListener('click', event => { if (!host.contains(event.target)) menu.innerHTML = ''; });
 }
